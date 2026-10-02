@@ -31,19 +31,15 @@ export function formatTranscript(t: Transcript): string {
     .join("\n");
 }
 
+/** 每份文件一個內容區塊，順序與 req.documents 相同（AI 錯誤回報第幾個區塊時用來對回檔名）。 */
 function documentBlocks(req: AnalyzeRequest): BetaContentBlockParam[] {
   return req.documents.map((d, i): BetaContentBlockParam => {
     const data = d.data.replace(/\s+/g, "");
-    const title = `文件 ${i + 1}`;
-    switch (d.mimeType) {
-      case "application/pdf":
-        return { type: "document", title, source: { type: "base64", media_type: "application/pdf", data } };
-      case "text/plain":
-        return { type: "document", title, source: { type: "text", media_type: "text/plain", data: Buffer.from(data, "base64").toString("utf8") } };
-      default:
-        // 路由已限制為 DOCUMENT_TYPES 中的影像格式
-        return { type: "image", source: { type: "base64", media_type: d.mimeType as ImageType, data } };
+    if (d.mimeType === "application/pdf") {
+      return { type: "document", title: `文件 ${i + 1}`, source: { type: "base64", media_type: "application/pdf", data } };
     }
+    // 路由已限制為 DOCUMENT_TYPES 中的影像格式，並核對過檔頭與大小
+    return { type: "image", source: { type: "base64", media_type: d.mimeType as ImageType, data } };
   });
 }
 
@@ -103,6 +99,7 @@ export async function analyzeVisit(req: AnalyzeRequest, signal?: AbortSignal): P
     schema: AnalysisOutputSchema,
     effort: "medium",
     signal,
+    documentNames: req.documents.map((d) => d.name),
   });
   return { analysis: finalizeAnalysis(data, req), meta: { mode: "claude", model: model ?? MODEL, promptVersion: PROMPT_VERSION } };
 }

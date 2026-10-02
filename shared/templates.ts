@@ -4,8 +4,8 @@
  */
 import type { DocKind, TranslateLang } from "./types";
 
-/** 提示詞與模板版本（設定頁「Prompt 2026.10-1」、版本紀錄都引用這個值）。 */
-export const PROMPT_VERSION = "2026.10-1";
+/** 提示詞與模板版本（設定頁「Prompt 2026.10-2」、版本紀錄都引用這個值）。 */
+export const PROMPT_VERSION = "2026.10-2";
 
 /* ------------------------------ 護理紀錄 ------------------------------ */
 

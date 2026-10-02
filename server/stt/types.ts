@@ -13,10 +13,13 @@ export interface SttProvider {
   transcribe(audio: AudioInput, signal?: AbortSignal): Promise<Transcript>;
 }
 
+export type SttErrorCode = "stt_failed" | "stt_not_configured";
+
 export class SttError extends Error {
   constructor(
     message: string,
     readonly retryable: boolean,
+    readonly code: SttErrorCode = "stt_failed",
   ) {
     super(message);
     this.name = "SttError";

@@ -300,6 +300,26 @@ describe("finalizeAnalysis", () => {
     expect(a.conflicts).toEqual([]);
   });
 
+  it("講者對照的鍵以逐字稿實際的代號為準（多段錄音 P2-S1）", () => {
+    const req = analyzeReq();
+    req.transcript!.segments = [
+      { startMs: 0, endMs: 1000, speaker: "P1-S1", text: "阿嬤午安" },
+      { startMs: 1000, endMs: 2000, speaker: "P2-S1", text: "我是看護" },
+    ];
+    const a = finalizeAnalysis(
+      out({
+        speakers: [
+          { id: "P1-S1", role: "護理師" },
+          { id: "ｐ２－ｓ１", role: "看護" },
+          { id: "S1", role: "家屬" },
+          { id: "?", role: "不明" },
+        ],
+      }),
+      req,
+    );
+    expect(a.speakers).toEqual({ "P1-S1": "護理師", "P2-S1": "看護" });
+  });
+
   it("只有文件時，文件數值不進今日生命徵象；手動值保留", () => {
     const a = finalizeAnalysis(
       out({ vitals: [v({ key: "bp", value: "150/88", sourceQuote: "BP 150/88" })], missingDomains: ["疼痛"] }),
@@ -354,6 +374,67 @@ describe("neutralizeVitalNumbers（N2）", () => {
     const r = neutralizeVitalNumbers(ok, allow);
     expect(r.leaks).toEqual([]);
     expect(r.text).toBe(ok);
+  });
+
+  it("「達／高達／維持在／控制在」後的實際量測值不算門檻", () => {
+    const cases: [string, string][] = [
+      ["體溫高達 38.6℃。", "38.6℃"],
+      ["體溫達 38.6 度。", "38.6 度"],
+      ["血壓維持在 150/95 mmHg。", "150/95 mmHg"],
+      ["血壓控制在 160/95。", "160/95"],
+      ["血氧達 93%。", "93%"],
+      ["SpO2 維持在 93%。", "93%"],
+    ];
+    for (const [text, leak] of cases) expect(neutralizeVitalNumbers(text, allow).leaks, text).toEqual([leak]);
+  });
+
+  it("比較詞只放行整數門檻；小數、血壓組合與 ℃／mmHg（非警訊句）照樣檢查", () => {
+    const cases: [string, string][] = [
+      ["體溫超過 38.6℃。", "38.6℃"],
+      ["今日血壓超過 160/100 mmHg。", "160/100 mmHg"],
+      ["體溫超過 38℃。", "38℃"],
+      ["體溫高於 39 ℃。", "39 ℃"],
+      ["血壓 150/95 mmHg 以上。", "150/95 mmHg"],
+    ];
+    for (const [text, leak] of cases) expect(neutralizeVitalNumbers(text, allow).leaks, text).toEqual([leak]);
+    const thresholds = [
+      "體溫超過 38℃，請立即就醫。",
+      "收縮壓高於 180 mmHg 請立即就醫。",
+      "體溫高於或等於 38 度請就醫。",
+      "血糖低於 70 時請進食。",
+      "血氧低於 90%。",
+      "脈搏超過 100 次/分。",
+      "目標：血壓控制在 140/90 mmHg 以下。",
+      "目標：血氧維持在 95% 以上。",
+    ];
+    for (const text of thresholds) expect(neutralizeVitalNumbers(text, allow), text).toEqual({ text, leaks: [] });
+    // 衛教「出現這些情況…就醫」段落：整段都是警訊
+    expect(neutralizeVitalNumbers("1. 體溫超過 38℃。", allow, { redFlagSection: true }).leaks).toEqual([]);
+    expect(neutralizeVitalNumbers("1. 體溫超過 38℃。", allow).leaks).toEqual(["38℃"]);
+  });
+
+  it("同一句中沿用前一個子句的生命徵象字眼", () => {
+    const cases: [string, string][] = [
+      ["血壓偏高，今日 168/98。", "168/98"],
+      ["脈搏偏快，今日 120 次/分。", "120 次/分"],
+      ["心跳偏快，今日量得 120 下。", "120 下"],
+      ["體溫偏高，今日 38.6。", "38.6"],
+      ["血氧偏低，今日 91%。", "91%"],
+    ];
+    for (const [text, leak] of cases) expect(neutralizeVitalNumbers(text, allow).leaks, text).toEqual([leak]);
+    // 換句（。）就不沿用
+    expect(neutralizeVitalNumbers("血壓偏高。今日灌食 3 次。", allow).leaks).toEqual([]);
+    // 單位與字眼對不上、或沿用時數值不合理：不是生命徵象
+    const ok = [
+      "血壓偏高，已協助抬高床頭 30 度並休息 15 分鐘。",
+      "體溫正常，床頭抬高 30 度。",
+      "體溫正常，痰液約 3.5 cc。",
+      "體溫正常，傷口約 2.5 x 3 公分。",
+      "血糖偏高，已調整胰島素 8 單位。",
+      "血氧 97%，給予氧氣 2 L。",
+      "今日 3 點訪視，血氧 97%。",
+    ];
+    for (const text of ok) expect(neutralizeVitalNumbers(text, allow), text).toEqual({ text, leaks: [] });
   });
 });
 
@@ -522,6 +603,20 @@ describe("toAiError", () => {
   });
   it("非 AI 錯誤回傳 null", () => {
     expect(toAiError(new Error("x"))).toBeNull();
+  });
+  it("文件相關的說明只用在附有文件的請求，並盡量指出是哪一份", () => {
+    const bad = (message: string) =>
+      Anthropic.APIError.generate(400, { type: "error", error: { type: "invalid_request_error", message } }, message, new Headers());
+    const plain = toAiError(bad("messages.0.content.0.text: bad"));
+    expect(plain).toMatchObject({ code: "ai_bad_request", retryable: false });
+    expect(plain!.message).not.toContain("文件");
+    const named = toAiError(bad("messages.0.content.1.document.source.base64.data: The PDF specified was not valid."), {
+      documentNames: ["a.pdf", "病摘.pdf"],
+    });
+    expect(named!.message).toContain("「病摘.pdf」");
+    const unnamed = toAiError(bad("something else"), { documentNames: ["a.pdf"] });
+    expect(unnamed!.message).toContain("匯入的文件");
+    expect(toAiError(api(413, "request_too_large"))!.message).not.toContain("文件");
   });
 });
 

@@ -5,8 +5,8 @@ export const MODEL = process.env.CLAUDE_MODEL ?? "claude-opus-5-5";
 let client: Anthropic | null = null;
 
 /** 有 ANTHROPIC_API_KEY（或 ANTHROPIC_AUTH_TOKEN）時使用 Claude，否則走示範模式。 */
-export function hasCredentials(): boolean {
-  return Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+export function hasCredentials(env: NodeJS.ProcessEnv = process.env): boolean {
+  return Boolean(env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN);
 }
 
 export function getClient(): Anthropic {

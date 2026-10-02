@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import { DEMO_DURATION_MS, DEMO_SEGMENTS } from "../../shared/demoTranscript";
-import { EDU_CLOSING, TRANSLATION_PREFIX } from "../../shared/templates";
+import { EDU_CLOSING, PROMPT_VERSION, TRANSLATION_PREFIX } from "../../shared/templates";
 import type { AnalyzeRequest, AnalyzeResponse, GenerateResponse, TranslateResponse } from "../../shared/types";
 import { analyzeRoute } from "./analyze";
 import { generateRoute } from "./generate";
@@ -35,7 +35,7 @@ describe("AI 路由（示範模式）", () => {
     const res = await post("/api/analyze", base);
     expect(res.status).toBe(200);
     const { analysis, meta } = (await res.json()) as AnalyzeResponse;
-    expect(meta).toEqual({ mode: "demo", model: null, promptVersion: "2026.10-1" });
+    expect(meta).toEqual({ mode: "demo", model: null, promptVersion: PROMPT_VERSION });
     expect(analysis.vitals.find((v) => v.key === "temp")).toMatchObject({ value: "16.8", status: "implausible", suggestion: "36.8" });
 
     const gen = await post("/api/generate", {

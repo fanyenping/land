@@ -49,13 +49,18 @@ const TranscriptSchema = z.object({
   provider: z.string(),
 });
 
-export const DOCUMENT_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp", "image/gif", "text/plain"] as const;
+/** Claude 可直接讀取的文件格式（PDF 與 4 種影像）。 */
+export const DOCUMENT_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp", "image/gif"] as const;
+export type DocumentType = (typeof DOCUMENT_TYPES)[number];
+
+/** 單份文件 base64 字元上限（約 10 MB 原檔）；zod 先擋超長字串，之後的檢查才不會處理巨量資料。 */
+export const MAX_DOCUMENT_BASE64_CHARS = 14_000_000;
 
 const DocumentSchema = z.object({
   name: z.string().max(300),
   /** 允許的格式在路由檢查（回 415 與明確說明）。 */
-  mimeType: z.string(),
-  data: z.string().min(1),
+  mimeType: z.string().max(100),
+  data: z.string().min(1).max(MAX_DOCUMENT_BASE64_CHARS),
 });
 
 export const AnalyzeRequestSchema = z.object({
@@ -149,7 +154,7 @@ const d = <T extends z.ZodType>(schema: T, text: string): T => schema.describe(t
 
 export const AnalysisOutputSchema = z.object({
   summary: z.string().describe("一句話（40 字內）總結本次訪視重點"),
-  speakers: z.array(z.object({ id: z.string().describe("逐字稿的講者代號，例如 S1"), role: z.string().describe("護理師、個案、家屬（女兒）、看護、不明") })),
+  speakers: z.array(z.object({ id: z.string().describe("照抄逐字稿行首的講者代號，例如 S1、P2-S1"), role: z.string().describe("護理師、個案、家屬（女兒）、看護、不明") })),
   vitals: z.array(
     z.object({
       key: VitalKeySchema,

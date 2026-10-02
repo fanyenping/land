@@ -51,6 +51,8 @@ export interface StructuredCall<T> {
   effort: Effort;
   maxTokens?: number;
   signal?: AbortSignal;
+  /** content 開頭依序的文件／影像區塊對應的檔名（AI 拒收文件時用來指出是哪一份）。 */
+  documentNames?: readonly string[];
 }
 
 /**
@@ -120,7 +122,7 @@ export async function callStructured<T>(call: StructuredCall<T>): Promise<{ data
       else throw err;
     }
   } catch (err) {
-    throw toAiError(err) ?? err;
+    throw toAiError(err, { documentNames: call.documentNames }) ?? err;
   }
 
   if (message.stop_reason === "refusal") {
@@ -140,8 +142,21 @@ export async function callStructured<T>(call: StructuredCall<T>): Promise<{ data
   return { data: parsed.data, model: message.model };
 }
 
+export interface AiErrorContext {
+  /** 這次請求附帶的文件（依 content 區塊順序）；沒有文件時不要給文件相關的說明。 */
+  documentNames?: readonly string[];
+}
+
+/** API 的錯誤訊息會標出出錯的內容區塊（messages.0.content.N…）；文件區塊排在最前面，可對回檔名。 */
+function rejectedDocument(err: InstanceType<typeof Anthropic.APIError>, names: readonly string[]): string | null {
+  const m = /messages\.0\.content\.(\d+)/.exec(err.message);
+  const i = m ? Number(m[1]) : -1;
+  return i >= 0 && i < names.length ? names[i] : null;
+}
+
 /** SDK 錯誤 → AiError（由具體到一般）；不是 AI 呼叫的錯誤回傳 null。 */
-export function toAiError(err: unknown): AiError | null {
+export function toAiError(err: unknown, ctx: AiErrorContext = {}): AiError | null {
+  const docs = ctx.documentNames ?? [];
   if (err instanceof AiError) return err;
   if (err instanceof Anthropic.APIUserAbortError) return new AiError("ai_cancelled", "請求已取消。", true, 503);
   if (err instanceof Anthropic.APIConnectionTimeoutError) {
@@ -160,11 +175,23 @@ export function toAiError(err: unknown): AiError | null {
     return new AiError("ai_config", "AI 模型設定有誤（找不到模型），請聯絡系統管理員。", false, 503);
   }
   if (err instanceof Anthropic.BadRequestError) {
-    return new AiError("ai_bad_request", "AI 服務無法處理這次的內容（文件可能損毀、加密或格式不支援），請檢查後再試。", false, 422);
+    if (docs.length === 0) {
+      return new AiError("ai_bad_request", "AI 服務無法處理這次的請求，請重試；若持續發生請聯絡系統管理員。", false, 422);
+    }
+    const name = rejectedDocument(err, docs);
+    return new AiError(
+      "ai_bad_request",
+      name
+        ? `AI 服務無法讀取「${name}」（可能損毀、加密、頁數過多或格式不支援）。請移除這份文件或改用照片後再試。`
+        : "AI 服務無法讀取匯入的文件（可能損毀、加密、頁數過多或格式不支援）。請檢查文件，或移除後再試。",
+      false,
+      422,
+    );
   }
   if (err instanceof Anthropic.APIError) {
     if (err.status === 413) {
-      return new AiError("ai_too_large", "內容太大，AI 服務無法處理；請減少文件頁數後再試。", false, 413);
+      const hint = docs.length ? "請減少文件頁數或份數後再試。" : "請縮短內容後再試。";
+      return new AiError("ai_too_large", `內容太大，AI 服務無法處理；${hint}`, false, 413);
     }
     if ((err.status !== undefined && err.status >= 500) || err.type === "overloaded_error" || err.type === "api_error") {
       return new AiError("ai_busy", "AI 服務暫時無法使用（已自動重試 2 次），請稍後再試。", true, 503);

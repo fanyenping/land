@@ -249,7 +249,7 @@ export function finalizeAnalysis(out: AnalysisOutput, req: AnalyzeRequest): Anal
 
   const analysis: Analysis = {
     summary: out.summary,
-    speakers: Object.fromEntries(out.speakers.map((s) => [s.id, s.role])),
+    speakers: speakerRoles(out.speakers, segments),
     vitals,
     findings,
     tubes,
@@ -270,6 +270,23 @@ export function finalizeAnalysis(out: AnalysisOutput, req: AnalyzeRequest): Anal
     conflicts: ensureIds(out.conflicts, "x"),
   };
   return polishAnalysis(deepTraditional(analysis, QUOTE_FIELDS));
+}
+
+const speakerKey = (id: string) => id.normalize("NFKC").replace(/\s+/g, "").toUpperCase();
+
+/**
+ * 講者代號 → 角色。鍵一律用逐字稿裡實際出現的代號（多段錄音為 P2-S1 這種形式），
+ * 模型寫法略有出入（全形、大小寫、空白）時對回原代號；逐字稿沒有的代號不收。
+ */
+export function speakerRoles(list: { id: string; role: string }[], segments: TranscriptSegment[]): Record<string, string> {
+  const ids = new Map<string, string>();
+  for (const s of segments) if (s.speaker) ids.set(speakerKey(s.speaker), s.speaker);
+  const out: Record<string, string> = {};
+  for (const { id, role } of list) {
+    const real = ids.get(speakerKey(id));
+    if (real && !(real in out)) out[real] = role;
+  }
+  return out;
 }
 
 /** 分析中給人看的文字套用同樣的格式與用語（原句與依據保持原樣）。 */
@@ -306,11 +323,22 @@ const LABELS: [RegExp, VitalKey | "any"][] = [
 ];
 
 const TOKEN = /(?<![\d./])(\d{1,3}(?:\.\d+)?)(?:\/(\d{1,3}))?(?![\d/.])(\s*(?:℃|°C|度|%|％|mmHg|mg\/dL|次\/分鐘?|次|下|bpm))?/g;
-const OTHER_UNIT = /^\s*(?:公分|cm|毫升|mL|ml|mg(?!\/)|公克|g\b|顆|錠|粒|包|分鐘|小時|天|日|週|個月|月|年|歲|號|Fr|公斤|kg|頁|項|題|位|版|×)/;
-const THRESHOLD_BEFORE = /(?:超過|高於|低於|大於|小於|不超過|不低於|未滿|達到?|維持(?:在)?|控制(?:在)?|目標|≥|≤|>|<|＞|＜|≧|≦)\s*$/;
+const OTHER_UNIT =
+  /^\s*(?:公分|cm|毫升|mL|ml|cc|CC|c\.c\.|公升|L\b|mg(?!\/)|公克|g\b|單位|IU|U\b|顆|錠|粒|包|支|瓶|罐|片|杯|匙|份|餐|劑|分鐘|小時|天|日|週|個月|月|年|歲|號|點|Fr|公斤|kg|頁|項|題|位|版|×|x\b|X\b|\*)/;
+/**
+ * 真正的比較詞才算門檻（「超過 38 度」「血糖低於 70」）。「達」「高達」「維持在」「控制在」「目標」
+ * 常用來描述實際量到的值（體溫高達 38.6℃、血壓維持在 150/95 mmHg），不算門檻。
+ */
+const COMPARE_BEFORE = /(?:超過|高於|低於|大於|小於|多於|少於|不超過|不低於|未滿|未達|≥|≤|>|<|＞|＜|≧|≦)(?:或等於)?\s*$/;
 const THRESHOLD_AFTER = /^\s*(?:以上|以下|以內)/;
+/** 就醫警訊或照護目標的句子：帶 ℃／mmHg 的門檻只有在這類句子裡才可能是門檻。 */
+const THRESHOLD_CONTEXT = /就醫|急診|送醫|119|立即|立刻|馬上|儘快|盡快|聯絡|通知|回診|警訊|目標/;
+const STRONG_UNIT = /℃|°C|mmHg/;
 const RANGE_BEFORE = /\d\s*[～~〜–—\-至到]\s*$/;
 const RANGE_AFTER = /^\s*[～~〜–—\-至到]\s*\d/;
+/** 句子以句號等切開；同一句中逗號、頓號後的數字沿用前面最近的生命徵象字眼。 */
+const SENTENCE = /[^。！？\n]+/g;
+const CLAUSE_BREAK = /[，、；：,;:]/g;
 
 export interface NumberAllowList {
   byKey: Map<VitalKey, Set<number>>;
@@ -333,45 +361,73 @@ export function buildAllowList(
   return { byKey, any };
 }
 
-function keyForToken(unit: string, hasSlash: boolean, decimal: boolean, labels: { key: VitalKey | "any"; at: number }[], at: number): VitalKey | null {
-  const u = unit.trim();
+/** 依單位與字眼判斷是哪一項生命徵象；單位與字眼對不上（「血壓偏高，床頭抬高 30 度」）就不是生命徵象。 */
+function keyForToken(u: string, hasSlash: boolean, decimal: boolean, label: VitalKey | "any" | null): VitalKey | null {
   if (hasSlash || u === "mmHg") return "bp";
   if (u === "mg/dL") return "glucose";
   if (u === "℃" || u === "°C") return "temp";
-  const before = labels.filter((l) => l.at <= at).pop() ?? labels[0];
-  const key = before?.key ?? null;
-  if (key === "any") return u === "%" || u === "％" ? "spo2" : decimal ? "temp" : null;
-  if (u === "%" || u === "％") return key === "spo2" || key === null ? "spo2" : key;
-  return key;
+  if (u === "%" || u === "％") return label === "spo2" || label === "any" || label === null ? "spo2" : null;
+  if (u === "度") return label === "temp" || (label === "any" && decimal) ? "temp" : null;
+  if (u) return label === "pulse" || label === "resp" ? label : null; // 次/分、次、下、bpm
+  if (label === "any") return decimal ? "temp" : null;
+  return label;
+}
+
+/**
+ * 門檻說法不算數值：真正的比較詞（超過、低於…）後面接整數，或數值後接「以上／以下／以內」。
+ * 帶 ℃／mmHg 的值、小數、血壓（142/86）只有在就醫警訊或照護目標的句子裡才可能是門檻。
+ */
+function isThreshold(before: string, after: string, a: string, b: string | undefined, u: string, context: boolean): boolean {
+  const plainInteger = !b && !a.includes(".") && !STRONG_UNIT.test(u);
+  if (COMPARE_BEFORE.test(before)) {
+    const integer = !b && !a.includes(".");
+    return integer && (plainInteger || context);
+  }
+  if (THRESHOLD_AFTER.test(after)) return plainInteger || context;
+  return false;
+}
+
+export interface NeutralizeOptions {
+  /** 整段都是就醫警訊（衛教「出現這些情況…」段落）。 */
+  redFlagSection?: boolean;
 }
 
 /**
  * 內文中的生命徵象數值必須屬於確認值、上次確認值或文件值（N2）；
  * 找不到依據的改成「〔見生命徵象〕」並回報。門檻（超過 38 度）與範圍（80～130）不算。
  */
-export function neutralizeVitalNumbers(body: string, allow: NumberAllowList): { text: string; leaks: string[] } {
+export function neutralizeVitalNumbers(body: string, allow: NumberAllowList, opts: NeutralizeOptions = {}): { text: string; leaks: string[] } {
   const leaks: string[] = [];
-  const text = body.replace(/[^，。；、！？\n]+/g, (clause) => {
+  const text = body.replace(SENTENCE, (sentence) => {
     const labels = LABELS.flatMap(([re, key]) => {
       const m = new RegExp(re.source, "g");
-      return [...clause.matchAll(m)].map((x) => ({ key, at: x.index ?? 0 }));
+      return [...sentence.matchAll(m)].map((x) => ({ key, at: x.index ?? 0 }));
     }).sort((a, b) => a.at - b.at);
-    return clause.replace(TOKEN, (match, a: string, b: string | undefined, unit: string | undefined, offset: number) => {
-      const u = unit ?? "";
-      const before = clause.slice(Math.max(0, offset - 8), offset);
-      const after = clause.slice(offset + match.length);
+    const breaks = [...sentence.matchAll(CLAUSE_BREAK)].map((m) => m.index ?? 0);
+    const context = !!opts.redFlagSection || THRESHOLD_CONTEXT.test(sentence);
+    return sentence.replace(TOKEN, (match, a: string, b: string | undefined, unit: string | undefined, offset: number) => {
+      const u = (unit ?? "").trim();
+      const before = sentence.slice(Math.max(0, offset - 8), offset);
+      const after = sentence.slice(offset + match.length);
       if (!u && OTHER_UNIT.test(after)) return match;
-      if (THRESHOLD_BEFORE.test(before) || THRESHOLD_AFTER.test(after)) return match;
+      if (isThreshold(before, after, a, b, u, context)) return match;
       if (RANGE_BEFORE.test(before) || RANGE_AFTER.test(after)) return match;
-      const hasLabel = labels.length > 0;
-      const key = keyForToken(u, !!b, a.includes("."), labels, offset);
+      // 字眼：同一句中前面最近的一個；前面沒有時，才看同一個子句中後面的字眼
+      const clauseStart = breaks.filter((x) => x < offset).reduce((_, x) => x + 1, 0);
+      const clauseEnd = breaks.find((x) => x >= offset) ?? sentence.length;
+      const prior = labels.filter((l) => l.at <= offset).pop();
+      const label = prior ?? labels.find((l) => l.at > offset && l.at < clauseEnd);
+      const carried = !!prior && prior.at < clauseStart;
+      const key = keyForToken(u, !!b, a.includes("."), label?.key ?? null);
       if (!key) return match;
       // 沒有生命徵象字眼時，只抓明確的血壓（帶 mmHg）與體溫（小數＋℃）樣式
-      if (!hasLabel && !((key === "bp" && /mmHg/.test(u)) || (key === "temp" && a.includes(".") && /℃|°C/.test(u)))) return match;
+      if (!label && !((key === "bp" && u === "mmHg") || (key === "temp" && a.includes(".") && /℃|°C/.test(u)))) return match;
+      if (key === "bp" && !b) return match;
       const value = b ? `${a}/${b}` : a;
-      if (key === "bp" ? !b : false) return match;
-      // 形狀明顯不是生命徵象的數字（例如「呼吸訓練 3 次」）不處理；體溫的小數一律檢查（含 16.8 這類錯誤值）
-      if (!(key === "temp" && (a.includes(".") || /℃|°C|度/.test(u))) && !isPlausible(key, value)) return match;
+      // 形狀明顯不是生命徵象的數字（例如「呼吸訓練 3 次」）不處理；體溫帶 ℃ 或同一子句的小數一律檢查（含 16.8 這類錯誤值）。
+      // 從前面子句沿用字眼時一定要在合理範圍內，避免「體溫正常，傷口 2.5 x 3」這類誤判。
+      const tempShaped = key === "temp" && (/℃|°C/.test(u) || (!carried && (a.includes(".") || u === "度")));
+      if (!tempShaped && !isPlausible(key, value)) return match;
       const nums = b ? [Number(a), Number(b)] : [Number(a)];
       const ok = nums.every((x) => allow.byKey.get(key)?.has(x) || allow.any.has(x));
       if (ok) return match;
@@ -379,7 +435,7 @@ export function neutralizeVitalNumbers(body: string, allow: NumberAllowList): { 
       return NEUTRAL;
     });
   });
-  return { text: text.replace(new RegExp(`[ \u00a0]+${NEUTRAL}`, "g"), NEUTRAL), leaks };
+  return { text: text.replace(new RegExp(`[  ]+${NEUTRAL}`, "g"), NEUTRAL), leaks };
 }
 
 /* ============================== AI 界線與個資（N6、N10） ============================== */
@@ -417,6 +473,9 @@ export interface FinalizeDocResult {
   doc: GeneratedDoc;
   warnings: string[];
 }
+
+/** 就醫警訊段落（衛教「三、出現這些情況，請馬上聯絡護理師或就醫」）。 */
+const RED_FLAG_HEADING = /就醫|警訊/;
 
 const VITAL_SUBJECT = /^(?:\d+\.\s*)?(?:飯前|飯後)?(?:體溫|脈搏|心跳|呼吸(?!道|音|聲)|血壓|血氧|血糖|生命徵象)/;
 
@@ -517,7 +576,7 @@ export function finalizeDoc(out: DocOutput, req: GenerateRequest): FinalizeDocRe
       if (re.test(body)) warnings.push(`${label}出現疑似${what}，已遮蔽。`);
       body = body.replace(re, "〔已遮蔽〕");
     }
-    const { text, leaks } = neutralizeVitalNumbers(body, allow);
+    const { text, leaks } = neutralizeVitalNumbers(body, allow, { redFlagSection: RED_FLAG_HEADING.test(s.heading) });
     for (const leak of leaks) {
       warnings.push(`${label}${s.heading ? `「${s.heading}」` : ""}出現找不到依據的生命徵象數值「${leak}」，已改為${NEUTRAL}，請以生命徵象行為準。`);
     }

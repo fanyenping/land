@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import { SttError, transcribeSegments, type AudioInput, type SttProvider } from "../stt";
+import { STT_NOT_CONFIGURED, SttError, isSttConfigured, transcribeSegments, type AudioInput, type SttProvider } from "../stt";
 
 const AUDIO_TYPES = /^(audio\/|video\/webm|video\/mp4|application\/octet-stream)/;
 
@@ -8,17 +8,26 @@ const AUDIO_TYPES = /^(audio\/|video\/webm|video\/mp4|application\/octet-stream)
  */
 export function transcribeRoute(stt: SttProvider) {
   return async (c: Context) => {
-    const form = await c.req.formData();
+    // 沒有設定 STT 時不必先收完整個音檔
+    if (!isSttConfigured(stt)) {
+      return c.json({ error: { code: "stt_not_configured", message: STT_NOT_CONFIGURED, retryable: false } }, 503);
+    }
+    let form: FormData;
+    try {
+      form = await c.req.formData();
+    } catch {
+      return c.json({ error: { code: "bad_form", message: "錄音上傳的格式不正確，請重新上傳。", retryable: false } }, 400);
+    }
     const files = form.getAll("audio").filter((v): v is File => v instanceof File);
     if (files.length === 0) {
-      return c.json({ error: { code: "no_audio", message: "沒有收到音檔，請重新選擇或錄音。" } }, 400);
+      return c.json({ error: { code: "no_audio", message: "沒有收到音檔，請重新選擇或錄音。", retryable: false } }, 400);
     }
     if (files.length > 10) {
-      return c.json({ error: { code: "too_many", message: "一次最多合併 10 段錄音。" } }, 400);
+      return c.json({ error: { code: "too_many", message: "一次最多合併 10 段錄音。", retryable: false } }, 400);
     }
     const bad = files.find((f) => f.type && !AUDIO_TYPES.test(f.type));
     if (bad) {
-      return c.json({ error: { code: "bad_type", message: `「${bad.name}」不是可辨識的音檔格式。` } }, 415);
+      return c.json({ error: { code: "bad_type", message: `「${bad.name}」不是可辨識的音檔格式。`, retryable: false } }, 415);
     }
 
     const parts: AudioInput[] = await Promise.all(
@@ -34,6 +43,9 @@ export function transcribeRoute(stt: SttProvider) {
       return c.json({ transcript });
     } catch (err) {
       if (err instanceof SttError) {
+        if (err.code === "stt_not_configured") {
+          return c.json({ error: { code: err.code, message: err.message, retryable: false } }, 503);
+        }
         return c.json(
           { error: { code: "stt_failed", message: `語音轉文字失敗：${err.message}`, retryable: err.retryable } },
           502,
