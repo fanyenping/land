@@ -41,6 +41,9 @@ app.onError((err, c) => {
   return c.json({ error: { code: "server_error", message: "伺服器發生錯誤，資料仍在這台裝置，請稍後再試。", retryable: true } }, 500);
 });
 
+// 未定義的 API 路徑回 JSON 404，不要落到前端頁面。
+app.all("/api/*", (c) => c.json({ error: { code: "not_found", message: "找不到這個 API。", retryable: false } }, 404));
+
 if (process.env.NODE_ENV === "production") {
   app.use("/*", serveStatic({ root: "./dist" }));
   app.get("*", serveStatic({ path: "./dist/index.html" }));
