@@ -45,20 +45,20 @@ export function VitalsGrid({ visit, onEdit }: { visit: Visit; onEdit: (key: Vita
                   k === "consciousness" && "col-span-2 sm:col-span-3 min-h-[84px]",
                 )}
               >
-                <span className="flex w-full items-center gap-1.5 text-[0.95rem] font-bold">
-                  {VITAL_LABEL[k]}
-                  {(v?.qualifier ?? r?.qualifier) && <span className="truncate font-medium text-ink-soft">{v?.qualifier ?? r?.qualifier}</span>}
-                  <span className="ml-auto text-[0.8rem] font-bold text-ink-soft">{pending ? "待確認" : v?.by === "nurse" ? "手動" : "有原句"}</span>
+                <span className="flex w-full min-w-0 items-center gap-1.5 text-[0.95rem] font-bold">
+                  <span className="shrink-0">{VITAL_LABEL[k]}</span>
+                  {(v?.qualifier ?? r?.qualifier) && <span className="min-w-0 truncate font-medium text-ink-soft">{v?.qualifier ?? r?.qualifier}</span>}
+                  {flag && value !== null && <span className="rounded-full bg-danger-tint px-2 py-0.5 text-[0.78rem] font-extrabold text-danger">{flag === "high" ? "偏高" : "偏低"}</span>}
+                  <span className="ml-auto shrink-0 text-[0.8rem] font-bold text-ink-soft">{pending ? "待確認" : v?.by === "nurse" ? "手動" : "有原句"}</span>
                 </span>
                 {value === null ? (
                   <span className="text-[1.1rem] font-bold text-ink-soft">本次未測</span>
                 ) : k === "consciousness" ? (
                   <span className="text-[1.1rem] font-bold leading-snug">{value}</span>
                 ) : (
-                  <span className="flex items-baseline gap-1">
-                    <span className={cx("num text-[2.1rem] font-extrabold leading-none", pending && "mark-pending")}>{value}</span>
-                    <span className="text-[0.9rem] font-bold text-ink-soft">{unit}</span>
-                    {flag && <span className="ml-1 text-[0.9rem] font-extrabold text-danger">{flag === "high" ? "偏高" : "偏低"}</span>}
+                  <span className="flex min-w-0 flex-wrap items-baseline gap-x-1">
+                    <span className={cx("num font-extrabold leading-none", (value ?? "").length > 5 ? "text-[1.7rem]" : "text-[2.1rem]", pending && "mark-pending")}>{value}</span>
+                    <span className="text-[0.85rem] font-bold text-ink-soft">{unit}</span>
                   </span>
                 )}
               </button>

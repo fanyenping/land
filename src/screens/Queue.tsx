@@ -146,7 +146,7 @@ function Row({ visit, patient, active }: { visit: Visit; patient?: Patient; acti
           {visit.date === todayStr() ? "今天" : shortDate(visit.date)} {visit.time ?? ""}
         </span>
       </span>
-      <Pill tone={st.tone} icon={<Critter kind={st.critter} size={16} animate={visit.status === "processing"} />}>
+      <Pill tone={st.tone} icon={st.tone === "pending" ? undefined : <Critter kind={st.critter} size={16} animate={visit.status === "processing"} />}>
         {st.label}
       </Pill>
       {!desktop && <ChevronRight size={18} className="text-ink-faint" />}

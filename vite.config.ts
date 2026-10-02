@@ -15,8 +15,8 @@ export default defineConfig({
         short_name: "TaiOne care",
         description: "PDF 或錄音一鍵產出護理計畫、護理紀錄與家屬衛教",
         lang: "zh-Hant-TW",
-        theme_color: "#24252c",
-        background_color: "#fff7ef",
+        theme_color: "#141414",
+        background_color: "#f4f0ea",
         display: "standalone",
         orientation: "any",
         start_url: "/",
@@ -26,9 +26,17 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,svg,woff2,mjs}"],
+        // 中文字型切成數百個 unicode-range 檔，只在用到時下載並快取，不預先全部下載。
+        globPatterns: ["**/*.{js,css,html,svg,mjs}"],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         navigateFallbackDenylist: [/^\/api\//],
+        runtimeCaching: [
+          {
+            urlPattern: ({ request }) => request.destination === "font",
+            handler: "CacheFirst",
+            options: { cacheName: "fonts", expiration: { maxEntries: 600, maxAgeSeconds: 60 * 60 * 24 * 365 } },
+          },
+        ],
       },
     }),
   ],

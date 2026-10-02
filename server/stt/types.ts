@@ -3,7 +3,7 @@ import type { Transcript, TranscriptSegment } from "../../shared/types";
 export type { Transcript, TranscriptSegment };
 
 export interface AudioInput {
-  data: Uint8Array;
+  data: Uint8Array<ArrayBuffer>;
   mimeType: string;
   filename: string;
 }

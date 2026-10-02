@@ -1,9 +1,7 @@
-import * as OpenCC from "opencc-js/cn2t";
+import { toTraditionalSafe } from "../ai/validate";
 
-// 研究發現歷史轉譯工作曾出現簡體字（F-C1）。所有逐字稿在進入語意分析前
-// 一律以 OpenCC 轉為台灣正體（含台灣慣用詞），對已是正體的文字不會改動。
-const toTaiwan = OpenCC.Converter({ from: "cn", to: "twp" });
-
+// 研究發現歷史轉譯工作曾出現簡體字（F-C1）。逐字稿在進入語意分析前一律轉台灣正體；
+// 使用「只改真正的簡體字」版本，避免把已是正體的字誤轉（排泄→排洩、干擾→幹擾）。
 export function toTraditional(text: string): string {
-  return toTaiwan(text);
+  return toTraditionalSafe(text);
 }

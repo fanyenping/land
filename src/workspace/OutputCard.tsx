@@ -95,7 +95,9 @@ export function OutputCard({
   return (
     <article id={`sec-${kind}`} aria-label={title} className="scroll-mt-32 overflow-hidden rounded-[30px] bg-card outline-ink">
       <header className={cx("contours flex items-center gap-3 px-4 py-3.5 text-[#141414] md:px-5", st.bg)}>
-        <Critter kind={st.critter} size={44} animate={writing} />
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-card outline-ink">
+          <Critter kind={st.critter} size={36} animate={writing} />
+        </span>
         <div className="min-w-0 flex-1">
           <h2 className="font-round text-[1.35rem] font-extrabold leading-tight">{title}</h2>
           <p className="truncate text-[0.92rem] font-bold">

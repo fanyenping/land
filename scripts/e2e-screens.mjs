@@ -15,7 +15,7 @@ const browser = await chromium.launch({
 const errors = [];
 
 async function run(name, viewport, isMobile) {
-  const ctx = await browser.newContext({ viewport, deviceScaleFactor: 2, isMobile, hasTouch: isMobile, locale: "zh-TW" });
+  const ctx = await browser.newContext({ viewport, deviceScaleFactor: 2, isMobile, hasTouch: isMobile, locale: "zh-TW", ignoreHTTPSErrors: true });
   await ctx.grantPermissions(["clipboard-read", "clipboard-write", "microphone"], { origin: BASE });
   const page = await ctx.newPage();
   page.on("pageerror", (e) => errors.push(`[${name}] pageerror: ${e.message}`));
@@ -99,7 +99,97 @@ async function run(name, viewport, isMobile) {
   await ctx.close();
 }
 
+
+/** 手機深入操作：各面板與選項都要真的能用。 */
+async function deep() {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: "zh-TW", ignoreHTTPSErrors: true });
+  await ctx.grantPermissions(["clipboard-read", "clipboard-write", "microphone"], { origin: BASE });
+  const page = await ctx.newPage();
+  page.on("pageerror", (e) => errors.push(`[deep] pageerror: ${e.message}`));
+  const shot = async (label, fullPage = false) => {
+    await page.waitForTimeout(450);
+    await page.screenshot({ path: `${OUT}/deep-${label}.png`, fullPage });
+  };
+  await page.goto(`${BASE}/welcome`);
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "用示範個案開始" }).click();
+  await page.getByText("今日個案").waitFor();
+
+  // 新增個案
+  await page.getByRole("link", { name: "個案" }).first().click();
+  await page.getByRole("button", { name: "新增個案" }).click();
+  await page.getByRole("dialog").getByLabel("姓名").fill("周美玉");
+  await page.getByRole("dialog").getByPlaceholder("例如 84").fill("79");
+  await page.getByRole("dialog").getByRole("radio", { name: "女" }).click();
+  await page.getByRole("button", { name: "建立個案" }).click();
+  await page.getByText("周○玉").first().waitFor();
+
+  // 個案頁：新增管路、加入今日
+  await page.getByText("周○玉").first().click();
+  await page.getByRole("button", { name: "新增管路" }).click();
+  await page.getByRole("button", { name: "導尿管" }).click();
+  await page.getByRole("button", { name: "儲存" }).click();
+  await page.getByRole("button", { name: "加入今日" }).click();
+  await shot("01-patient-detail", true);
+
+  // 匯入 PDF 到這位個案
+  const pdf = Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF");
+  await page.getByRole("button", { name: "匯入", exact: true }).click();
+  const [chooser] = await Promise.all([page.waitForEvent("filechooser"), page.getByRole("button", { name: "選 PDF 檔" }).click()]);
+  await chooser.setFiles({ name: "出院病摘.pdf", mimeType: "application/pdf", buffer: pdf });
+  await page.waitForURL(/\/v\/[^/]+$/);
+  await page.getByText(/確認並複製|再複製一次/).first().waitFor({ timeout: 60_000 });
+  await shot("02-pdf-intake", true);
+
+  // 修改 → 版本紀錄
+  await page.getByRole("button", { name: "修改" }).first().click();
+  const area = page.getByRole("dialog").locator("textarea").first();
+  await area.fill((await area.inputValue()) + "（護理師補充）");
+  await page.getByRole("button", { name: "完成" }).click();
+  await page.getByRole("button", { name: /更多選項/ }).first().click();
+  await page.getByRole("button", { name: /版本紀錄/ }).click();
+  await shot("03-versions");
+  await page.keyboard.press("Escape");
+
+  // 重新產生（已修改 → 新版本可比較）
+  await page.getByRole("button", { name: /更多選項/ }).first().click();
+  await page.getByRole("button", { name: /^重新產生/ }).click();
+  await page.getByRole("button", { name: "更精簡" }).click();
+  await page.getByRole("button", { name: "產生新版本" }).click();
+  await page.getByText("有新版本可比較").first().waitFor({ timeout: 30_000 });
+  await page.getByRole("button", { name: "比較" }).first().click();
+  await shot("04-compare");
+  await page.getByRole("button", { name: "改用新版" }).click();
+
+  // 先看這裡：文件重點對照（若有）
+  const docs = page.getByRole("button", { name: "文件重點已對照" }).first();
+  if (await docs.count()) await docs.click();
+  for (const name of ["異動已確認"]) {
+    const btn = page.getByRole("button", { name }).first();
+    if (await btn.count()) await btn.click();
+  }
+  // 衛教：確認中文版後翻譯
+  await page.getByRole("button", { name: "翻譯給看護" }).click();
+  await page.getByRole("button", { name: "確認中文版" }).click();
+  await page.getByRole("button", { name: /翻成印尼文/ }).click();
+  await page.getByText("Bahasa Indonesia").first().waitFor({ timeout: 30_000 });
+  await shot("05-translate");
+
+  // 設定：深色、大字
+  await page.goto(`${BASE}/settings`);
+  await page.getByRole("radio", { name: "深色" }).click();
+  await page.getByRole("radio", { name: "大字" }).click();
+  await shot("06-settings-dark");
+  await page.goto(`${BASE}/`);
+  await page.getByText("今日個案").waitFor();
+  await shot("07-today-dark");
+  await page.goto(`${BASE}/patients`);
+  await shot("08-patients-dark");
+  await ctx.close();
+}
+
 try {
+  await deep();
   await run("phone", { width: 390, height: 844 }, true);
   await run("desktop", { width: 1440, height: 900 }, false);
 } catch (e) {

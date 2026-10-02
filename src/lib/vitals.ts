@@ -1,3 +1,4 @@
+import { computeFlag, isPlausible } from "../../shared/clinical";
 import { VITAL_LABEL, VITAL_UNIT, type Analysis, type VitalKey, type VitalReading } from "../../shared/types";
 import type { ResolvedVital, Settings, Visit } from "./model";
 
@@ -6,64 +7,27 @@ export const VITAL_ORDER: Record<Settings["vitalsOrder"], VitalKey[]> = {
   line: ["temp", "bp", "pulse", "spo2", "resp", "consciousness", "glucose"],
 };
 
-const RANGES: Partial<Record<VitalKey, [number, number]>> = {
-  temp: [34, 42],
-  pulse: [30, 200],
-  resp: [6, 60],
-  spo2: [50, 100],
-  glucose: [20, 600],
-};
-
-/** 數值是否在合理範圍（不合理代表多半是聽錯或打錯）。 */
+/** 數值是否在合理範圍（不合理多半是聽錯或打錯）；門檻與伺服器共用 shared/clinical。 */
 export function plausible(key: VitalKey, value: string): boolean {
-  if (key === "consciousness") return value.trim().length > 0;
-  if (key === "bp") {
-    const m = value.match(/^(\d{2,3})\s*\/\s*(\d{2,3})$/);
-    if (!m) return false;
-    const s = Number(m[1]);
-    const d = Number(m[2]);
-    return s >= 60 && s <= 260 && d >= 30 && d <= 160 && s > d;
-  }
-  const n = Number(value);
-  const r = RANGES[key];
-  return Number.isFinite(n) && !!r && n >= r[0] && n <= r[1];
+  return isPlausible(key, value);
 }
 
 export function clinicalFlag(key: VitalKey, value: string, qualifier: string | null): "high" | "low" | null {
-  if (key === "bp") {
-    const m = value.match(/^(\d{2,3})\s*\/\s*(\d{2,3})$/);
-    if (!m) return null;
-    const s = Number(m[1]);
-    const d = Number(m[2]);
-    if (s >= 140 || d >= 90) return "high";
-    if (s < 90) return "low";
-    return null;
-  }
-  const n = Number(value);
-  if (!Number.isFinite(n)) return null;
-  switch (key) {
-    case "temp":
-      return n >= 37.5 ? "high" : n < 35.5 ? "low" : null;
-    case "pulse":
-      return n > 100 ? "high" : n < 60 ? "low" : null;
-    case "resp":
-      return n > 24 ? "high" : n < 12 ? "low" : null;
-    case "spo2":
-      return n < 94 ? "low" : null;
-    case "glucose": {
-      const fasting = qualifier?.includes("飯前") || qualifier?.includes("空腹");
-      if (n < 70) return "low";
-      return n >= (fasting ? 130 : 180) ? "high" : null;
-    }
-    default:
-      return null;
-  }
+  return computeFlag(key, value, qualifier);
 }
 
 /** 由分析結果與護理師輸入，建立初始的數值狀態（手動值永遠勝過語音）。 */
 export function initialVitals(analysis: Analysis, typed: Visit["typedVitals"], typedQ: Visit["typedQualifiers"]) {
   const out: Partial<Record<VitalKey, ResolvedVital>> = {};
   for (const r of analysis.vitals) {
+    const prev = out[r.key];
+    if (prev && prev.value && r.status === "ok") {
+      // 同一次訪視的復測（例：拍痰後血氧）併入附註，主值保留第一次量測。
+      const unit = VITAL_UNIT[r.key];
+      const again = `${r.qualifier ?? "復測"} ${r.value}${unit === "%" || unit === "℃" ? unit : ` ${unit}`}`;
+      out[r.key] = { ...prev, qualifier: prev.qualifier ? `${prev.qualifier}，${again}` : again };
+      continue;
+    }
     out[r.key] = {
       value: r.value,
       qualifier: r.qualifier,
@@ -108,7 +72,8 @@ export function vitalsLine(visit: Visit, order: VitalKey[]): string | null {
   for (const key of order) {
     const v = visit.vitals[key];
     if (!v || v.value === null) continue;
-    parts.push(formatVital(key, v.value, v.qualifier));
+    const pending = !v.confirmed && v.by === "ai";
+    parts.push(formatVital(key, v.value, v.qualifier) + (pending ? "（待確認）" : ""));
   }
   const notMeasured = order.filter((k) => visit.vitals[k] && visit.vitals[k]!.value === null).map((k) => VITAL_LABEL[k]);
   if (parts.length === 0 && notMeasured.length === 0) return null;

@@ -20,11 +20,11 @@ type Range = readonly [number, number];
 export const PLAUSIBLE_RANGE: Record<Exclude<NumericVitalKey, "bp">, Range> & { sbp: Range; dbp: Range } = {
   temp: [34, 42],
   pulse: [30, 200],
-  resp: [6, 60],
+  resp: [6, 50],
   spo2: [50, 100],
   glucose: [20, 600],
-  sbp: [60, 260],
-  dbp: [30, 160],
+  sbp: [60, 250],
+  dbp: [30, 150],
 };
 
 /** 成人臨床異常門檻（機構可調）。 */
@@ -34,7 +34,7 @@ export const FLAG_THRESHOLD = {
   resp: { high: 24, low: 12 },
   sbp: { high: 140, low: 90 },
   dbp: { high: 90 },
-  spo2: { low: 94 },
+  spo2: { low: 95 },
   glucose: { fastingHigh: 130, otherHigh: 180, low: 70 },
 } as const;
 
@@ -157,16 +157,19 @@ function parseCnInteger(s: string): number | null {
   let total = 0;
   let digit: number | null = null;
   let lastUnit = 0;
+  let afterUnit = false;
   for (const c of s) {
-    if (c in CN_DIGIT) digit = CN_DIGIT[c];
-    else if (c in CN_UNIT) {
+    if (c in CN_DIGIT) {
+      afterUnit = digit === null && lastUnit > 0 && CN_DIGIT[c] !== 0 && !s.includes("零");
+      digit = CN_DIGIT[c];
+    } else if (c in CN_UNIT) {
       total += (digit ?? 1) * CN_UNIT[c];
       lastUnit = CN_UNIT[c];
       digit = null;
     } else return null;
   }
-  // 口語省略：「一百六」＝160、「兩千五」＝2500
-  if (digit !== null) total += lastUnit >= 100 && digit !== 0 ? digit * (lastUnit / 10) : digit;
+  // 口語省略：「一百六」＝160、「兩千五」＝2500（「一百零八」不適用）
+  if (digit !== null) total += afterUnit && lastUnit >= 100 ? digit * (lastUnit / 10) : digit;
   return total;
 }
 
@@ -455,11 +458,12 @@ export function identityConcernFromText(text: string, patient: PatientContext): 
 }
 
 /** 依序以 c1、c2… 補上缺漏或重複的 id。 */
-export function ensureIds<T extends { id?: string | null }>(items: T[], prefix: string): (T & { id: string })[] {
+export function ensureIds<T extends object>(items: T[], prefix: string): (T & { id: string })[] {
   const used = new Set<string>();
   let n = 0;
   return items.map((item) => {
-    let id = item.id?.trim() ?? "";
+    const raw = (item as { id?: unknown }).id;
+    let id = typeof raw === "string" ? raw.trim() : "";
     if (!id || used.has(id)) {
       do id = `${prefix}${++n}`;
       while (used.has(id));

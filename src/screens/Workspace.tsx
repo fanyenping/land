@@ -61,7 +61,10 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
   const toast = useToast();
   const settings = useSettings();
   const engine = useEngine();
-  const desktop = useMedia("(min-width: 1024px)");
+  const wide = useMedia("(min-width: 1024px)");
+  const veryWide = useMedia("(min-width: 1680px)");
+  // 收尾頁內嵌時旁邊還有清單，空間夠寬才用左右兩欄。
+  const desktop = embedded ? veryWide : wide;
   const [menu, setMenu] = useState(false);
   const [vitalsOpen, setVitalsOpen] = useState<{ focus: VitalKey | null } | null>(null);
   const [blocked, setBlocked] = useState<{ kind: DocKind | "all"; blockers: Blocker[] } | null>(null);

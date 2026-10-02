@@ -53,13 +53,13 @@ export function Today() {
       <header className="mb-4 flex items-center gap-3">
         <div className="flex items-center gap-2 lg:hidden">
           <Critter kind="brand" size={34} />
-          <span className="font-round text-[1.15rem] font-extrabold">
+          <span className="whitespace-nowrap font-round text-[1.15rem] font-extrabold">
             TaiOne <span className="text-coral">care</span>
           </span>
         </div>
         <h1 className="hidden font-round text-[2.6rem] font-extrabold leading-none lg:block">今天</h1>
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-[0.95rem] font-bold text-ink-soft">{longDate(today)}</span>
+          <span className="hidden text-[0.95rem] font-bold text-ink-soft sm:inline">{longDate(today)}</span>
           <RevealButton />
           <Link to="/settings" aria-label="設定" className="rounded-full outline-ink">
             <Critter kind="nurse" size={44} />
@@ -68,9 +68,10 @@ export function Today() {
       </header>
 
       {/* 深色主卡（參考 Today 卡） */}
-      <section className="relative mb-4 animate-rise overflow-hidden rounded-[32px] bg-night p-6 text-night-ink md:p-8">
+      <section className="relative mb-4 animate-rise overflow-hidden rounded-[32px] bg-night p-6 text-night-ink ring-1 ring-white/10 md:p-8">
         <p className="mb-2 text-[1.05rem] font-bold opacity-80">
           {greeting(now)}，{settings.nurseName || "護理師"}
+          <span className="sm:hidden">・{longDate(today)}</span>
         </p>
         <p className="font-round text-[1.75rem] font-extrabold leading-[1.45] md:text-[2.2rem]">
           {todays.length === 0 ? (
@@ -86,7 +87,7 @@ export function Today() {
                   </span>
                 </span>
               ))}
-              {todays.length > 3 ? ` 等 ${todays.length} 位` : ` 共 ${todays.length} 位`}
+              <span className="whitespace-nowrap">{todays.length > 3 ? ` 等 ${todays.length} 位` : ` 共 ${todays.length} 位`}</span>
               {waitingReview.length > 0 ? (
                 <>
                   ，還有
@@ -250,7 +251,7 @@ function VisitCard({ visit, patient, index }: { visit: Visit; patient: Patient; 
             </span>
             {visit.status !== "scheduled" && (
               <span className="mt-1 block">
-                <Pill tone={st.tone} icon={<Critter kind={st.critter} size={18} animate={visit.status === "processing"} />}>
+                <Pill tone={st.tone} className="outline-ink" icon={st.tone === "pending" ? undefined : <Critter kind={st.critter} size={18} animate={visit.status === "processing"} />}>
                   {st.label}
                 </Pill>
               </span>

@@ -110,9 +110,9 @@
 }
 
 @theme {
-  --font-sans: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
-  --font-round: "Chiron GoRound TC", "Noto Sans TC", "PingFang TC", sans-serif;
-  --font-num: "Bricolage Grotesque", "Noto Sans TC", ui-sans-serif, sans-serif;
+  --font-sans: "Noto Sans TC Variable", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --font-round: "Chiron GoRound TC Variable", "Noto Sans TC Variable", "PingFang TC", sans-serif;
+  --font-num: "Bricolage Grotesque Variable", "Noto Sans TC Variable", ui-sans-serif, sans-serif;
 
   --color-paper: var(--paper);
   --color-card: var(--card);

@@ -186,6 +186,7 @@ async function finishDemoVisit(v: Visit, p: Patient, status: "done" | "review") 
       adoptedSuggestions: [],
       options: { recordStyle: "four", instructions: [], custom: null, nurseName: null, clinicPhone: null },
       intakeOnly: false,
+      previous: p.last,
     });
     const out: OutputState = {
       ...v.outputs[kind],

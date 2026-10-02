@@ -165,7 +165,7 @@ function RecordingScreen() {
         <p className="text-[1.02rem] font-bold">
           {live ? `第 ${segment} 段・即時存在這台裝置` : visit.parts.length ? `已錄 ${visit.parts.length} 段` : dictate ? "對著手機說今天的訪視重點" : "手機放在床邊就好，照護時不用碰"}
         </p>
-        {live && rec.state === "recording" && rec.level < 0.04 && <p className="rounded-full bg-white/60 px-3 py-1 text-[0.92rem] font-bold">聲音偏小，手機放近一點</p>}
+        {live && rec.state === "recording" && rec.elapsedMs > 3000 && rec.level < 0.04 && <p className="rounded-full bg-white/60 px-3 py-1 text-[0.92rem] font-bold">聲音偏小，手機放近一點</p>}
 
         <div className="mt-2 grid w-full grid-cols-2 gap-3">
           <Button size="lg" onClick={() => setVitals(true)}>
@@ -179,7 +179,7 @@ function RecordingScreen() {
               camera.current?.click();
             }}
           >
-            {live ? "暫停並拍文件" : "拍文件"}
+            拍文件
           </Button>
         </div>
 
