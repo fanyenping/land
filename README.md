@@ -35,6 +35,17 @@ export AZURE_SPEECH_KEY=...
 export ACCESS_CODE=...
 ```
 
+其他伺服器設定（皆為選用）：
+
+| 變數 | 預設 | 說明 |
+|---|---|---|
+| `STT_PROVIDER` | 自動 | `azure` 或 `whisper`；指定了卻缺金鑰或網址時伺服器不會啟動 |
+| `RATE_LIMIT_AI_PER_MIN` | 30 | 每個 IP 每分鐘的分析＋撰寫＋翻譯次數 |
+| `RATE_LIMIT_TRANSCRIBE_PER_MIN` | 20 | 每個 IP 每分鐘的轉文字次數 |
+| `TRUST_PROXY` | 0 | 前面有幾層反向代理；部署在代理後方務必設定，否則所有人共用同一個限流額度 |
+
+伺服器拒絕跨站請求、只接受 PDF／JPEG／PNG／WebP／GIF 文件（並核對檔案內容與類型相符），單張照片上限 5 MB（App 會先縮圖）。
+
 設定了 Claude 但沒有設定語音轉文字時，錄音會回報「尚未設定語音轉文字」，不會悄悄用示範逐字稿。
 設定 `ACCESS_CODE` 後，護理師在 App 的「設定 → AI 服務 → 機構通行碼」輸入一次即可（只存在該裝置）。
 

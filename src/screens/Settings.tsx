@@ -13,6 +13,8 @@ import { useEngine, useSettings } from "../lib/hooks";
 import { CONSENT_VERSION, type Settings } from "../lib/model";
 import { seedDemo } from "../lib/seed";
 
+const STT_LABEL: Record<string, string> = { demo: "示範", none: "尚未設定（只能匯入文件）", azure: "Azure 語音", whisper: "Whisper" };
+
 export function SettingsScreen() {
   const s = useSettings();
   const toast = useToast();
@@ -95,7 +97,7 @@ export function SettingsScreen() {
             </p>
             <p className="text-[0.9rem] text-ink-soft">
               {engine?.kind === "server"
-                ? `轉文字：${engine.health.stt === "demo" ? "示範" : engine.health.stt}・模型：${engine.health.llm.model ?? "示範"}`
+                ? `轉文字：${STT_LABEL[engine.health.stt] ?? engine.health.stt}・模型：${engine.health.llm.model ?? "示範"}`
                 : engine?.kind === "local"
                   ? `${engine.reason}・紀錄會先存在這台裝置，連上後自動接續`
                   : ""}
