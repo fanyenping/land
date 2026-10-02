@@ -4,7 +4,8 @@
 
 - 手機、平板、電腦同一份程式（響應式 PWA，可加入主畫面當 App 用，也可直接用瀏覽器）
 - 資料留在裝置（IndexedDB）；伺服器只轉送 AI 請求、不保存內容
-- 沒有 AI 金鑰時自動進入示範模式，整個流程都能操作，輸出標示「示範資料」
+- 伺服器沒有 AI 金鑰時以示範模式運作，整個流程都能操作，輸出標示「示範資料」
+- 真實個案連不上 AI 伺服器時，錄音與文件先存在裝置、標示「等網路」，恢復後自動接續（絕不改用示範內容）
 
 ## 文件
 
@@ -30,7 +31,12 @@ export ANTHROPIC_API_KEY=...
 export AZURE_SPEECH_ENDPOINT=https://<region>.api.cognitive.microsoft.com
 export AZURE_SPEECH_KEY=...
 # export WHISPER_BASE_URL=http://localhost:8000   WHISPER_API_KEY=...   WHISPER_MODEL=...
+# 機構通行碼（建議正式環境設定）：除 /api/health 外，所有 /api 請求都要帶 X-Access-Code
+export ACCESS_CODE=...
 ```
+
+設定了 Claude 但沒有設定語音轉文字時，錄音會回報「尚未設定語音轉文字」，不會悄悄用示範逐字稿。
+設定 `ACCESS_CODE` 後，護理師在 App 的「設定 → AI 服務 → 機構通行碼」輸入一次即可（只存在該裝置）。
 
 正式部署：
 
@@ -38,7 +44,8 @@ export AZURE_SPEECH_KEY=...
 npm run build && npm start   # Node 伺服器同時提供 dist/ 與 /api
 ```
 
-只部署靜態檔（沒有 `/api`）時，App 會自動改用內建示範引擎。
+只部署靜態檔（沒有 `/api`）時：示範個案用 App 內建示範引擎；真實個案會等到連上 AI 伺服器才處理。
+教學或試用時可在「設定 → AI 服務 → 示範模式」開啟，所有新紀錄都用內建示範內容、不呼叫 AI。
 
 ## 架構
 

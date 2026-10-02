@@ -21,11 +21,11 @@ export function initialVitals(analysis: Analysis, typed: Visit["typedVitals"], t
   const out: Partial<Record<VitalKey, ResolvedVital>> = {};
   for (const r of analysis.vitals) {
     const prev = out[r.key];
-    if (prev && prev.value && r.status === "ok") {
-      // 同一次訪視的復測（例：拍痰後血氧）併入附註，主值保留第一次量測。
+    if (prev && prev.value && r.value) {
+      // 同一次訪視的復測（例：拍痰後血氧）併入附註，主值保留第一次量測；復測不確定時整項待確認。
       const unit = VITAL_UNIT[r.key];
       const again = `${r.qualifier ?? "復測"} ${r.value}${unit === "%" || unit === "℃" ? unit : ` ${unit}`}`;
-      out[r.key] = { ...prev, qualifier: prev.qualifier ? `${prev.qualifier}，${again}` : again };
+      out[r.key] = { ...prev, qualifier: prev.qualifier ? `${prev.qualifier}，${again}` : again, confirmed: prev.confirmed && r.status === "ok" };
       continue;
     }
     out[r.key] = {
@@ -42,27 +42,33 @@ export function initialVitals(analysis: Analysis, typed: Visit["typedVitals"], t
   return out;
 }
 
-/** 需要護理師處理的數值（先看這裡），低信心排前。 */
+/** 需要護理師處理的數值（先看這裡），每項一筆、低信心排前。 */
 export function pendingVitals(visit: Visit): VitalReading[] {
   if (!visit.analysis) return [];
+  const seen = new Set<VitalKey>();
   return visit.analysis.vitals
     .filter((r) => r.status !== "ok")
     .filter((r) => {
       const res = visit.vitals[r.key];
       return !res || (!res.confirmed && res.by === "ai");
     })
-    .sort((a, b) => a.confidence - b.confidence);
+    .sort((a, b) => a.confidence - b.confidence)
+    .filter((r) => !seen.has(r.key) && !!seen.add(r.key));
 }
 
 export function readingOf(visit: Visit, key: VitalKey): VitalReading | undefined {
   return visit.analysis?.vitals.find((r) => r.key === key);
 }
 
+const MEAL = /^(飯前|飯後|餐前|餐後|空腹|睡前|隨機)(?:[，,、\s]+(.+))?$/;
+
 export function formatVital(key: VitalKey, value: string, qualifier: string | null): string {
   const unit = VITAL_UNIT[key];
   const body = key === "consciousness" ? value : `${value}${unit === "%" || unit === "℃" ? "" : " "}${unit}`;
+  // 血糖的用餐時機放前面（飯前血糖 128 mg/dL），其他附註一律放括號。
+  const meal = key === "glucose" && qualifier ? qualifier.match(MEAL) : null;
+  if (meal) return `${meal[1]}血糖 ${value} ${unit}${meal[2] ? `（${meal[2]}）` : ""}`;
   const q = qualifier ? `（${qualifier}）` : "";
-  if (key === "glucose" && qualifier) return `${qualifier}血糖 ${value} ${unit}`;
   return `${VITAL_LABEL[key]} ${body}${q}`;
 }
 
@@ -82,8 +88,9 @@ export function vitalsLine(visit: Visit, order: VitalKey[]): string | null {
   return `${line}。`;
 }
 
+/** 只送出護理師確認過（或語音判讀可信）的數值；待確認的不給 AI 也不寫入上次紀錄。 */
 export function confirmedVitalList(visit: Visit) {
   return (Object.entries(visit.vitals) as [VitalKey, ResolvedVital][])
-    .filter(([, v]) => v.value !== null)
+    .filter(([, v]) => v.confirmed && v.value !== null)
     .map(([key, v]) => ({ key, value: v.value as string, qualifier: v.qualifier }));
 }

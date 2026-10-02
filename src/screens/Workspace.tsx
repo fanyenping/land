@@ -10,7 +10,7 @@ import { Sheet } from "../components/Sheet";
 import { useToast } from "../components/Toast";
 import { VitalsSheet } from "../components/VitalsSheet";
 import { Button, Pill, RoundButton, cx } from "../components/ui";
-import { addMaterial, blockersFor, confirmAll, confirmAndCopy, deleteVisit, moveVisit, type Blocker } from "../lib/actions";
+import { ackWarnings, addMaterial, blockersFor, confirmAll, confirmAndCopy, deleteVisit, storeSummary, type Blocker } from "../lib/actions";
 import { isDemoEngine } from "../lib/api";
 import { docTitle } from "../lib/compose";
 import { ageOf, clock, longDate, shortDate } from "../lib/format";
@@ -95,6 +95,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
     if (!next) return toast("這位三份都複製過了");
     const res = await confirmAndCopy(visit, next, patient);
     if (res.blockers.length) return onBlocked(next, res.blockers);
+    if (!res.ok) return toast("無法寫入剪貼簿");
     const after = available.slice(available.indexOf(next) + 1).find((k) => !visit.outputs[k].copiedAt);
     toast(`已複製：${patient.familyCallsAs ?? ""}${docTitle(next, settings)}（${res.chars} 字）${after ? ` → 下一個：${docTitle(after, settings)}` : ""}`, { big: true, ms: 3200 });
   }, [available, visit, patient, onBlocked, toast, settings]);
@@ -103,7 +104,9 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
     if (!desktop || !reviewing) return;
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
-      if (t.closest("input, textarea, [contenteditable], [role=dialog]") || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (t.closest("input, textarea, select, [contenteditable], [role=dialog]") || e.metaKey || e.ctrlKey || e.altKey) return;
+      // 面板開著時（焦點可能還在背景按鈕上）不觸發複製。
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
       if (e.key === "c" || e.key === "C") {
         e.preventDefault();
         if (e.shiftKey) void copyAll();
@@ -171,7 +174,12 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
   );
 
   const copyAllBar = reviewing && available.length > 0 && (
-    <div className={cx("z-30", desktop ? "sticky bottom-4 mt-4" : "safe-bottom fixed inset-x-0 bottom-0 bg-paper/90 px-4 pb-3 pt-2 backdrop-blur-md")}>
+    <div
+      className={cx(
+        "z-30",
+        desktop ? "sticky bottom-4 mt-4" : embedded ? "sticky bottom-0 -mx-4 bg-paper/90 px-4 pb-3 pt-2 backdrop-blur-md md:-mx-6 md:px-6" : "safe-bottom fixed inset-x-0 bottom-0 bg-paper/90 px-4 pb-3 pt-2 backdrop-blur-md",
+      )}
+    >
       <Button variant="primary" size="xl" block icon={<Copy size={22} />} onClick={copyAll}>
         {allConfirmed
           ? "已全部確認・再全部複製"
@@ -227,7 +235,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
     );
   } else {
     content = (
-      <div className="flex flex-col gap-4 pb-28">
+      <div className={cx("flex flex-col gap-4", !embedded && "pb-28")}>
         <ReviewBlock visit={visit} patient={patient} onEditVital={(k) => setVitalsOpen({ focus: k })} />
         <VitalsGrid visit={visit} onEdit={(k) => setVitalsOpen({ focus: k })} />
         {outputs}
@@ -265,7 +273,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
           e.target.value = "";
           if (!files.length) return;
           const res = await addMaterial(visit.id, files);
-          if (res) toast(`已加入 ${res.audio + res.docs} 個檔案，重新整理中`);
+          if (res) toast(storeSummary(res, visit.status === "scheduled" ? "，開始整理" : "，重新整理中"), { ms: res.skipped.length ? 5000 : undefined });
         }}
       />
 
@@ -291,7 +299,9 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
               if (k === "all") await copyAll();
               else if (k) {
                 const res = await confirmAndCopy(visit, k, patient);
-                if (res.ok) toast(`已確認並複製${docTitle(k, settings)}（${res.chars} 字）`);
+                if (res.blockers.length) onBlocked(k, res.blockers);
+                else if (res.ok) toast(`已確認並複製${docTitle(k, settings)}（${res.chars} 字）`);
+                else toast("無法寫入剪貼簿，請長按文字自行複製");
               }
             }}
           >
@@ -305,6 +315,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
           </Button>
         }
       >
+        {blocked && <OtherBlockers visit={visit} kind={blocked.kind} />}
         <ReviewBlock visit={visit} patient={patient} onEditVital={(k) => setVitalsOpen({ focus: k })} />
       </Sheet>
 
@@ -318,15 +329,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
           {
             label: "改到其他個案",
             icon: <Shuffle size={21} />,
-            onSelect: () =>
-              flows.findPatient(
-                "改到哪一位？",
-                async (p) => {
-                  const undo = await moveVisit(visit.id, p.id);
-                  toast("已改到其他個案", undo ? { action: { label: "復原", run: () => void undo() } } : undefined);
-                },
-                patient.id,
-              ),
+            onSelect: () => flows.moveTo(visit.id, patient.id),
           },
           { label: "個案資訊", icon: <Info size={21} />, onSelect: () => navigate(`/patients/${patient.id}`) },
           {
@@ -342,6 +345,37 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
           },
         ]}
       />
+    </div>
+  );
+}
+
+/** 「先看這裡」以外的關卡：整理中、撰寫中、輸出檢核提醒。 */
+function OtherBlockers({ visit, kind }: { visit: Visit; kind: DocKind | "all" }) {
+  const settings = useSettings();
+  const list = blockersFor(visit, kind).filter((b) => b.kind === "processing" || b.kind === "writing" || b.kind === "warning");
+  if (list.length === 0) return null;
+  return (
+    <div className="mb-3 flex flex-col gap-3">
+      {list.map((b) =>
+        b.kind === "warning" && b.doc ? (
+          <div key={`w-${b.doc}`} className="rounded-[22px] bg-pending-tint p-4 outline-ink">
+            <p className="font-extrabold">{docTitle(b.doc, settings)}的提醒</p>
+            <ul className="mt-1.5 flex list-disc flex-col gap-1 pl-6 text-[0.98rem]">
+              {(visit.outputs[b.doc].versions[visit.outputs[b.doc].current]?.warnings ?? []).map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+            <Button variant="primary" className="mt-3" onClick={() => ackWarnings(visit.id, b.doc!)}>
+              看過了
+            </Button>
+          </div>
+        ) : (
+          <p key={`${b.kind}-${b.doc ?? ""}`} className="flex items-center gap-2 rounded-[22px] bg-card p-4 font-bold outline-ink">
+            <Critter kind="processing" size={30} animate />
+            {b.kind === "writing" && b.doc ? `等${docTitle(b.doc, settings)}寫完` : b.label}
+          </p>
+        ),
+      )}
     </div>
   );
 }

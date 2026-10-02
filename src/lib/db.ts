@@ -16,6 +16,9 @@ export interface StoredChunk {
   visitId: string;
   seq: number;
   blob: Blob;
+  /** 錄音格式與開始時間：App 中途被關掉時，用來把片段組回正確的錄音段。 */
+  mimeType?: string;
+  startedAt?: string;
 }
 
 class CareDb extends Dexie {

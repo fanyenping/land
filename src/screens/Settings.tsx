@@ -6,7 +6,7 @@ import { Critter } from "../components/Critter";
 import { Sheet } from "../components/Sheet";
 import { useToast } from "../components/Toast";
 import { Button, Segmented, Spinner, cx, inputClass } from "../components/ui";
-import { isDemoEngine, probeEngine } from "../lib/api";
+import { isDemoEngine, probeEngine, setAccessCode, verifyAccessCode } from "../lib/api";
 import { applyRetention, exportAll, saveSettings, wipeAll } from "../lib/db";
 import { clock, shortDate } from "../lib/format";
 import { useEngine, useSettings } from "../lib/hooks";
@@ -90,13 +90,14 @@ export function SettingsScreen() {
           <Critter kind={engine ? (isDemoEngine(engine) ? "pending" : "done") : "processing"} size={44} animate={!engine} />
           <div className="min-w-0 flex-1">
             <p className="font-extrabold">
-              {!engine ? "檢查中" : engine.kind === "local" ? "本機示範（未連線伺服器）" : engine.health.llm.mode === "demo" ? "伺服器示範模式" : `Claude 已連線`}
+              {!engine ? "檢查中" : engine.kind === "local" ? "連不上 AI 伺服器" : engine.health.llm.mode === "demo" ? "伺服器示範模式" : `Claude 已連線`}
+              {s.demoMode && <span className="ml-2 inline-flex rounded-full bg-pending px-2.5 py-0.5 text-[0.85rem] text-[#141414]">示範模式開啟中</span>}
             </p>
-            <p className="truncate text-[0.9rem] text-ink-soft">
+            <p className="text-[0.9rem] text-ink-soft">
               {engine?.kind === "server"
                 ? `轉文字：${engine.health.stt === "demo" ? "示範" : engine.health.stt}・模型：${engine.health.llm.model ?? "示範"}`
                 : engine?.kind === "local"
-                  ? `${engine.reason}・輸出會標示「示範資料」`
+                  ? `${engine.reason}・紀錄會先存在這台裝置，連上後自動接續`
                   : ""}
             </p>
           </div>
@@ -113,6 +114,35 @@ export function SettingsScreen() {
             測試
           </Button>
         </div>
+        {(s.accessCode || (engine?.kind === "server" && engine.health.auth)) && (
+          <TextSetting
+            label="機構通行碼"
+            value={s.accessCode}
+            placeholder="向機構管理者索取"
+            secret
+            onSave={async (v) => {
+              await saveSettings({ accessCode: v });
+              setAccessCode(v);
+              if (!v) return "已清除";
+              const r = await verifyAccessCode();
+              return r === "ok" ? "通行碼正確" : r === "wrong" ? "通行碼不正確，請再確認" : "已儲存，連上網路後生效";
+            }}
+          />
+        )}
+        <Row label="示範模式" hint="開啟後新紀錄一律用內建示範內容，不呼叫 AI，輸出會標示「示範資料」。給教學或試用。">
+          <Segmented
+            label="示範模式"
+            value={s.demoMode ? "on" : "off"}
+            onChange={(v) => {
+              set({ demoMode: v === "on" });
+              toast(v === "on" ? "示範模式已開啟" : "示範模式已關閉");
+            }}
+            options={[
+              { value: "off", label: "關閉" },
+              { value: "on", label: "開啟" },
+            ]}
+          />
+        </Row>
       </Group>
 
       <Group title="資料與隱私" tone="bg-pdf">
@@ -227,7 +257,21 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
   );
 }
 
-function TextSetting({ label, value, onSave, placeholder, inputMode }: { label: string; value: string; onSave: (v: string) => void; placeholder?: string; inputMode?: "tel" | "text" }) {
+function TextSetting({
+  label,
+  value,
+  onSave,
+  placeholder,
+  inputMode,
+  secret,
+}: {
+  label: string;
+  value: string;
+  onSave: (v: string) => void | Promise<string | void>;
+  placeholder?: string;
+  inputMode?: "tel" | "text";
+  secret?: boolean;
+}) {
   const [v, setV] = useState(value);
   const toast = useToast();
   useEffect(() => setV(value), [value]);
@@ -237,12 +281,14 @@ function TextSetting({ label, value, onSave, placeholder, inputMode }: { label: 
       <input
         value={v}
         inputMode={inputMode}
+        type={secret ? "password" : "text"}
+        autoComplete={secret ? "off" : undefined}
         placeholder={placeholder}
         onChange={(e) => setV(e.target.value)}
-        onBlur={() => {
+        onBlur={async () => {
           if (v.trim() !== value) {
-            onSave(v.trim());
-            toast("已儲存");
+            const msg = await onSave(v.trim());
+            toast(msg || "已儲存");
           }
         }}
         onKeyDown={(e) => {

@@ -1,11 +1,11 @@
 import { useState } from "react";
-import { Check, Copy, History, Languages, MoreHorizontal, Pencil, RefreshCw, Send, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Check, Copy, History, Languages, MoreHorizontal, Pencil, RefreshCw, Send, ShieldCheck } from "lucide-react";
 import { LANG_LABEL, type DocKind, type TranslateLang } from "../../shared/types";
 import { ActionSheet } from "../components/ActionSheet";
 import { Critter, type CritterKind } from "../components/Critter";
 import { useToast } from "../components/Toast";
 import { Button, Pill, RoundButton, Segmented, Spinner, cx } from "../components/ui";
-import { confirmAndCopy, confirmOnly, decideSuggestion, markEduShared, resolveCandidate, type Blocker } from "../lib/actions";
+import { ackWarnings, blockersFor, confirmAndCopy, confirmOnly, decideSuggestion, hasOpenWarnings, markEduShared, resolveCandidate, type Blocker } from "../lib/actions";
 import { charCount, docBody, docHeader, docTitle, eduShareText, shareToLine, writeClipboard } from "../lib/compose";
 import { clock } from "../lib/format";
 import { useSettings } from "../lib/hooks";
@@ -42,11 +42,14 @@ export function OutputCard({
   const [regen, setRegen] = useState(false);
   const [versions, setVersions] = useState<"list" | "compare" | null>(null);
   const [justCopied, setJustCopied] = useState(false);
-  const [lang, setLang] = useState<TranslateLang>(settings.translateLang);
+  const [picked, setLang] = useState<TranslateLang | null>(null);
+  const lang = picked ?? settings.translateLang;
   const [showTr, setShowTr] = useState(false);
 
   const has = out.versions.length > 0;
   const writing = out.status === "writing" || (out.status === "idle" && visit.status === "processing");
+  const warnings = out.versions[out.current]?.warnings ?? [];
+  const warningsOpen = hasOpenWarnings(out);
   const body = has ? docBody(kind, visit, settings) : "";
   const chars = charCount(body);
   const confirmed = out.status === "confirmed";
@@ -78,10 +81,9 @@ export function OutputCard({
   };
 
   const shareEdu = async (withLang?: TranslateLang) => {
-    if (!confirmed) {
-      const blockers = await confirmOnly(visit, "edu");
-      if (blockers.length) return onBlocked("edu", blockers);
-    }
+    // 已確認也要再檢查：補資料或改個案後正在重新整理時不能分享。
+    const blockers = confirmed ? blockersFor(visit, "edu") : await confirmOnly(visit, "edu");
+    if (blockers.length) return onBlocked("edu", blockers);
     const text = eduShareText(visit, patient, settings, withLang);
     await writeClipboard(text);
     const how = await shareToLine(text);
@@ -133,9 +135,13 @@ export function OutputCard({
         {changesOpen && has && (
           <div className="mb-3 rounded-2xl bg-pending-tint p-3 font-bold">
             評估異動尚未確認，確認後才能確認計畫。
-            <a href="#sec-check" className="ml-2 underline underline-offset-4">
+            <button
+              type="button"
+              onClick={() => document.getElementById("sec-check")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+              className="ml-2 min-h-[40px] font-extrabold underline underline-offset-4"
+            >
               前往確認
-            </a>
+            </button>
           </div>
         )}
 
@@ -179,10 +185,30 @@ export function OutputCard({
 
         {has && (
           <>
-            {out.status === "writing" && (
-              <p className="mb-2 flex items-center gap-2 text-[0.95rem] font-bold text-ink-soft">
-                <Spinner size={16} /> 正在產生新版本…
+            {(out.status === "writing" || out.busy) && (
+              <p className="mb-2 flex items-center gap-2 text-[0.95rem] font-bold text-ink-soft" aria-live="polite">
+                <Spinner size={16} /> {out.status === "writing" ? "正在產生新版本…" : "背景產生新版本中，完成後可比較"}
               </p>
+            )}
+            {warnings.length > 0 && warningsOpen && (
+              <div className="mb-3 rounded-2xl bg-pending-tint p-3">
+                <p className="flex items-center gap-2 font-extrabold">
+                  <AlertTriangle size={18} strokeWidth={2.6} /> 複製前請先看過
+                </p>
+                <ul className="mt-1.5 flex list-disc flex-col gap-1 pl-6 text-[0.98rem]">
+                  {warnings.map((w) => (
+                    <li key={w}>{w}</li>
+                  ))}
+                </ul>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Button size="sm" variant="primary" onClick={() => ackWarnings(visit.id, kind)}>
+                    看過了
+                  </Button>
+                  <Button size="sm" onClick={() => setEdit(true)}>
+                    修改
+                  </Button>
+                </div>
+              </div>
             )}
             {out.error && (
               <p className="mb-2 text-[0.95rem] font-bold text-danger">
@@ -213,11 +239,11 @@ export function OutputCard({
             <div className="mt-2 flex flex-col gap-2.5">
               {kind === "edu" ? (
                 <>
-                  <Button variant="primary" size="lg" block icon={<Send size={20} />} onClick={() => shareEdu()}>
+                  <Button variant="primary" size="lg" block icon={<Send size={20} />} onClick={() => shareEdu()} disabled={out.status === "writing"}>
                     {confirmed ? "再分享到 LINE" : "確認並分享到 LINE"}
                   </Button>
                   <div className="grid grid-cols-2 gap-2.5">
-                    <Button block icon={justCopied ? <Check size={20} strokeWidth={3} /> : <Copy size={19} />} onClick={copy}>
+                    <Button block icon={justCopied ? <Check size={20} strokeWidth={3} /> : <Copy size={19} />} onClick={copy} disabled={out.status === "writing"}>
                       {justCopied ? "已複製" : "只複製"}
                     </Button>
                     <Button block icon={<Languages size={19} />} onClick={() => setShowTr((v) => !v)} aria-expanded={showTr}>
@@ -226,12 +252,20 @@ export function OutputCard({
                   </div>
                 </>
               ) : (
-                <Button variant="primary" size="lg" block icon={justCopied ? <Check size={22} strokeWidth={3} /> : <Copy size={20} />} onClick={copy} className={justCopied ? "animate-pop" : ""}>
+                <Button
+                  variant="primary"
+                  size="lg"
+                  block
+                  icon={justCopied ? <Check size={22} strokeWidth={3} /> : <Copy size={20} />}
+                  onClick={copy}
+                  disabled={out.status === "writing"}
+                  className={justCopied ? "animate-pop" : ""}
+                >
                   {justCopied ? "已複製 ✓" : confirmed ? `再複製一次${title}` : `確認並複製${title}`}
                 </Button>
               )}
               {kind === "plan" && !confirmed && <p className="text-center text-[0.9rem] font-bold text-ink-soft">確認後設為第 {(patient.plan?.version ?? 0) + 1} 版</p>}
-              <Button variant="soft" block icon={<Pencil size={18} />} onClick={() => setEdit(true)}>
+              <Button variant="soft" block icon={<Pencil size={18} />} onClick={() => setEdit(true)} disabled={out.status === "writing"}>
                 修改
               </Button>
             </div>
@@ -301,7 +335,7 @@ export function OutputCard({
         items={[
           { label: "重新產生", icon: <RefreshCw size={21} />, hint: "可選更精簡、更詳細、家屬更好懂…", onSelect: () => setRegen(true) },
           { label: `版本紀錄（${out.versions.length}）`, icon: <History size={21} />, onSelect: () => setVersions("list") },
-          ...(!confirmed
+          ...(!confirmed && out.status !== "writing"
             ? [
                 {
                   label: "只確認，不複製",

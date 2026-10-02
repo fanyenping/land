@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { ExternalLink, Play } from "lucide-react";
+import { ExternalLink, Play, Trash2 } from "lucide-react";
 import { Critter } from "../components/Critter";
+import { useToast } from "../components/Toast";
 import { Segmented } from "../components/ui";
+import { removeDocument } from "../lib/actions";
 import { canPlaySource, playAt } from "../lib/audio";
 import { getBlob } from "../lib/db";
 import { bytes, duration } from "../lib/format";
@@ -11,6 +13,7 @@ type Tab = "transcript" | "audio" | "docs";
 
 /** 來源：逐字稿（依時間與講者）、錄音段、文件。 */
 export function Sources({ visit }: { visit: Visit }) {
+  const toast = useToast();
   const tabs: { value: Tab; label: string }[] = [];
   if (visit.transcript) tabs.push({ value: "transcript", label: "逐字稿" });
   if (visit.parts.length) tabs.push({ value: "audio", label: `錄音 ${visit.parts.length}` });
@@ -34,7 +37,19 @@ export function Sources({ visit }: { visit: Visit }) {
       {active === "docs" && (
         <div className="flex flex-col gap-2.5">
           {visit.documents.map((d) => (
-            <DocRow key={d.id} doc={d} />
+            <DocRow
+              key={d.id}
+              doc={d}
+              // 只剩這一份資料時不給移除（要整筆刪除請用「更多」）。
+              onRemove={
+                visit.parts.length + visit.documents.length > 1 && !["recording", "paused"].includes(visit.status)
+                  ? async () => {
+                      const undo = await removeDocument(visit.id, d.id);
+                      toast(visit.analysis ? "已移除，重新整理中" : "已移除", undo ? { action: { label: "復原", run: () => void undo() } } : undefined);
+                    }
+                  : undefined
+              }
+            />
           ))}
         </div>
       )}
@@ -99,7 +114,7 @@ function AudioRow({ part, index }: { part: AudioPart; index: number }) {
   );
 }
 
-function DocRow({ doc }: { doc: VisitDocument }) {
+function DocRow({ doc, onRemove }: { doc: VisitDocument; onRemove?: () => void }) {
   const url = useBlobUrl(doc.blobKey);
   const image = doc.mimeType.startsWith("image/");
   return (
@@ -114,6 +129,11 @@ function DocRow({ doc }: { doc: VisitDocument }) {
           <ExternalLink size={16} />
           開啟
         </a>
+      )}
+      {onRemove && (
+        <button type="button" aria-label={`移除 ${doc.name}`} title="移除" onClick={onRemove} className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-ink-soft hover:bg-ink/5">
+          <Trash2 size={18} />
+        </button>
       )}
     </div>
   );

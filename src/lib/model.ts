@@ -96,6 +96,8 @@ export interface OutputVersion {
   note: string | null;
   createdAt: string;
   meta: AiMeta | null;
+  /** 伺服器輸出檢核的提醒（數字無來源、超出 AI 界線…），護理師看過才能複製。 */
+  warnings?: string[];
 }
 
 export type OutputStatus = "idle" | "writing" | "draft" | "edited" | "confirmed" | "failed";
@@ -113,6 +115,10 @@ export interface OutputState {
   /** 護理計畫確認時設定的版號。 */
   planVersion: number | null;
   error: AppError | null;
+  /** 背景正在產生新版本（已修改或已確認的不會被覆寫）。 */
+  busy?: boolean;
+  /** 目前版本的檢核提醒已由護理師看過。 */
+  warningsAck?: boolean;
 }
 
 export interface AppError {
@@ -157,6 +163,8 @@ export interface Visit {
   intakeOnly: boolean;
   recordingStartedAt: string | null;
   recordingEndedAt: string | null;
+  /** 處理中又補了資料：這輪結束後重新整理。 */
+  reprocessQueued?: { audio: boolean } | null;
 }
 
 export interface Settings {
@@ -175,6 +183,10 @@ export interface Settings {
   translateLang: TranslateLang;
   retentionDays: number;
   copyBodyOnly: boolean;
+  /** 示範模式：不呼叫 AI，新紀錄一律使用示範內容（並標示「示範資料」）。 */
+  demoMode: boolean;
+  /** 伺服器要求的機構通行碼。 */
+  accessCode: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -193,6 +205,8 @@ export const DEFAULT_SETTINGS: Settings = {
   translateLang: "id",
   retentionDays: 30,
   copyBodyOnly: false,
+  demoMode: false,
+  accessCode: "",
 };
 
 export const CONSENT_VERSION = "2026.10";

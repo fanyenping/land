@@ -4,26 +4,16 @@ import { Camera, ChevronLeft, Check, MoreHorizontal, Pause, Play, Shuffle, Trash
 import { ActionSheet } from "../components/ActionSheet";
 import { Critter } from "../components/Critter";
 import { Name } from "../components/Name";
-import { ToastProvider, useToast } from "../components/Toast";
+import { useToast } from "../components/Toast";
 import { VitalsSheet } from "../components/VitalsSheet";
 import { Button, RoundButton, cx } from "../components/ui";
-import { FlowsProvider, useFlows } from "../app/Flows";
-import { consentValid, deleteVisit, finishVisit, moveVisit, startRecording, storeFiles } from "../lib/actions";
+import { useFlows } from "../app/Flows";
+import { consentValid, deleteVisit, finishVisit, startRecording, storeFiles, storeSummary } from "../lib/actions";
 import { duration, shortDate } from "../lib/format";
 import { usePatient, useRecorder, useVisit } from "../lib/hooks";
 import { recorder } from "../lib/recorder";
 
 export function Recording() {
-  return (
-    <ToastProvider>
-      <FlowsProvider>
-        <RecordingScreen />
-      </FlowsProvider>
-    </ToastProvider>
-  );
-}
-
-function RecordingScreen() {
   const { id } = useParams();
   const [params] = useSearchParams();
   const dictate = params.get("mode") === "dictate";
@@ -135,7 +125,7 @@ function RecordingScreen() {
             錄音中斷了，前面 {duration(previousMs)} 已安全保存。可以繼續錄第 {visit.parts.length + 1} 段，或直接完成訪視。
           </div>
         )}
-        {(rec.state === "error" && mine) || startFailed ? (
+        {!live && ((rec.state === "error" && mine) || startFailed) ? (
           <div className="w-full rounded-[24px] bg-card p-4 font-bold outline-ink">
             <div className="mb-3 flex items-center gap-3">
               <Critter kind="error" size={44} />
@@ -223,8 +213,8 @@ function RecordingScreen() {
           const files = Array.from(e.target.files ?? []);
           e.target.value = "";
           if (!files.length) return;
-          await storeFiles(visit.id, files);
-          toast(`已加入 ${files.length} 張文件照片`);
+          const res = await storeFiles(visit.id, files);
+          toast(res.skipped.length ? storeSummary(res) : `已加入 ${res.docs} 張文件照片`);
         }}
       />
       <input
@@ -237,8 +227,8 @@ function RecordingScreen() {
           const files = Array.from(e.target.files ?? []);
           e.target.value = "";
           if (!files.length) return;
-          await storeFiles(visit.id, files);
-          toast(`已加入 ${files.length} 個錄音檔`);
+          const res = await storeFiles(visit.id, files);
+          toast(res.skipped.length ? storeSummary(res) : `已加入 ${res.audio} 個錄音檔`);
         }}
       />
 
@@ -253,15 +243,7 @@ function RecordingScreen() {
           {
             label: "錄錯人了：改到其他個案",
             icon: <Shuffle size={22} />,
-            onSelect: () =>
-              flows.findPatient(
-                "改到哪一位？",
-                async (p) => {
-                  const undo = await moveVisit(visit.id, p.id);
-                  toast("已改到其他個案", undo ? { action: { label: "復原", run: () => void undo() } } : undefined);
-                },
-                patient.id,
-              ),
+            onSelect: () => flows.moveTo(visit.id, patient.id),
           },
           {
             label: "放棄這次錄音",

@@ -3,22 +3,15 @@ import { Navigate, Outlet, useLocation } from "react-router";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Critter } from "../components/Critter";
 import { BottomNav, SideNav } from "../components/Nav";
-import { ToastProvider } from "../components/Toast";
 import { db } from "../lib/db";
-import { FlowsProvider, useFlows } from "./Flows";
+import { useFlows } from "./Flows";
 
 export function AppShell() {
   const settings = useLiveQuery(() => db.settings.get("me"), [], "loading" as const);
   const loc = useLocation();
   if (settings === "loading") return null;
   if (!settings?.onboarded) return <Navigate to="/welcome" replace state={{ from: loc.pathname }} />;
-  return (
-    <ToastProvider>
-      <FlowsProvider>
-        <Frame />
-      </FlowsProvider>
-    </ToastProvider>
-  );
+  return <Frame />;
 }
 
 function Frame() {

@@ -13,7 +13,7 @@ import { useAllVisits, useEngine, useNow, useOnline, usePatients, useSettings } 
 import type { Patient, Visit } from "../lib/model";
 import { nextDue } from "../lib/pipeline";
 import { pendingCount, visitStatus } from "../lib/status";
-import { isDemoEngine } from "../lib/api";
+import { engineLabel } from "../lib/api";
 import { seedDemo } from "../lib/seed";
 
 export function Today() {
@@ -26,6 +26,7 @@ export function Today() {
   const toast = useToast();
   const online = useOnline();
   const engine = useEngine();
+  const aiStatus = engineLabel(engine, settings.demoMode);
 
   const byId = useMemo(() => new Map((patients ?? []).map((p) => [p.id, p])), [patients]);
   const todays = useMemo(
@@ -109,7 +110,9 @@ export function Today() {
             <span className={cx("h-2.5 w-2.5 rounded-full", online ? "bg-[#00b36b]" : "bg-[#8a8790]")} />
             {online ? "已連線" : "離線中・錄音、查看、複製都照常"}
           </span>
-          {isDemoEngine(engine) && engine && <span className="inline-flex items-center rounded-full bg-pending px-3 py-1.5 text-[#141414]">示範模式</span>}
+          {(aiStatus.tone === "demo" || aiStatus.tone === "off") && (
+            <span className={cx("inline-flex items-center rounded-full px-3 py-1.5", aiStatus.tone === "demo" ? "bg-pending text-[#141414]" : "bg-white/10")}>{aiStatus.text}</span>
+          )}
         </div>
         <Critter kind="brand" size={120} className="pointer-events-none absolute -bottom-8 -right-6 opacity-90 md:-right-2" style={{ transform: "rotate(-12deg)" }} />
       </section>

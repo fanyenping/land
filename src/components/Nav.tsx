@@ -1,7 +1,7 @@
 import { NavLink } from "react-router";
 import { Plus } from "lucide-react";
-import { useAllVisits, useEngine } from "../lib/hooks";
-import { isDemoEngine } from "../lib/api";
+import { useAllVisits, useEngine, useSettings } from "../lib/hooks";
+import { engineLabel } from "../lib/api";
 import { Critter, type Face, type Shape } from "./Critter";
 import { cx } from "./ui";
 
@@ -83,7 +83,8 @@ export function BottomNav({ onPlus }: { onPlus: () => void }) {
 export function SideNav({ onPlus }: { onPlus: () => void }) {
   const count = useQueueCount();
   const engine = useEngine();
-  const demo = isDemoEngine(engine);
+  const settings = useSettings();
+  const status = engineLabel(engine, settings.demoMode);
   return (
     <aside className="sticky top-0 hidden h-[100dvh] w-[244px] shrink-0 flex-col gap-2 p-4 lg:flex">
       <div className="flex h-full flex-col rounded-[30px] bg-card p-4 outline-ink">
@@ -110,8 +111,8 @@ export function SideNav({ onPlus }: { onPlus: () => void }) {
           ))}
         </nav>
         <div className="mt-auto rounded-2xl bg-ink/[0.05] px-3 py-2.5 text-[0.82rem] font-bold text-ink-soft">
-          <span className={cx("mr-1.5 inline-block h-2.5 w-2.5 rounded-full", demo ? "bg-pending" : "bg-ok")} />
-          {engine == null ? "連線檢查中" : demo ? "示範模式" : "AI 已連線"}
+          <span className={cx("mr-1.5 inline-block h-2.5 w-2.5 rounded-full", status.tone === "ok" ? "bg-ok" : status.tone === "demo" ? "bg-pending" : "bg-ink-faint")} />
+          {status.text}
         </div>
       </div>
     </aside>

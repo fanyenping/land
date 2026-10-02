@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { createBrowserRouter, RouterProvider } from "react-router";
+import { createBrowserRouter, Outlet, RouterProvider } from "react-router";
 import { registerSW } from "virtual:pwa-register";
 import "@fontsource-variable/noto-sans-tc";
 import "@fontsource-variable/chiron-goround-tc";
@@ -17,21 +17,39 @@ import { SettingsScreen } from "./screens/Settings";
 import { Welcome } from "./screens/Welcome";
 import { NotFound } from "./screens/NotFound";
 import { boot } from "./app/boot";
+import { ToastProvider } from "./components/Toast";
+import { FlowsProvider } from "./app/Flows";
+
+/** 全站共用的提示與流程（跨頁面時「復原」提示不會消失）。 */
+function Root() {
+  return (
+    <ToastProvider>
+      <FlowsProvider>
+        <Outlet />
+      </FlowsProvider>
+    </ToastProvider>
+  );
+}
 
 const router = createBrowserRouter([
-  { path: "/welcome", element: <Welcome /> },
-  { path: "/v/:id/rec", element: <Recording /> },
   {
-    element: <AppShell />,
+    element: <Root />,
     children: [
-      { path: "/", element: <Today /> },
-      { path: "/patients", element: <Patients /> },
-      { path: "/patients/:id", element: <PatientDetail /> },
-      { path: "/queue", element: <Queue /> },
-      { path: "/queue/:id", element: <Queue /> },
-      { path: "/v/:id", element: <WorkspaceRoute /> },
-      { path: "/settings", element: <SettingsScreen /> },
-      { path: "*", element: <NotFound /> },
+      { path: "/welcome", element: <Welcome /> },
+      { path: "/v/:id/rec", element: <Recording /> },
+      {
+        element: <AppShell />,
+        children: [
+          { path: "/", element: <Today /> },
+          { path: "/patients", element: <Patients /> },
+          { path: "/patients/:id", element: <PatientDetail /> },
+          { path: "/queue", element: <Queue /> },
+          { path: "/queue/:id", element: <Queue /> },
+          { path: "/v/:id", element: <WorkspaceRoute /> },
+          { path: "/settings", element: <SettingsScreen /> },
+          { path: "*", element: <NotFound /> },
+        ],
+      },
     ],
   },
 ]);

@@ -11,9 +11,11 @@ import {
   consentValid,
   ensureTodayVisit,
   importToPatient,
+  moveVisit,
   recordConsent,
   refuseConsent,
   startRecording,
+  storeSummary,
 } from "../lib/actions";
 import { bytes } from "../lib/format";
 import type { Patient } from "../lib/model";
@@ -33,6 +35,8 @@ interface Flows {
   findPatient: (title: string, onPick: (p: Patient) => void, excludeId?: string) => void;
   /** 新增或編輯個案。 */
   editPatient: (initial?: Patient | null, onSaved?: (p: Patient) => void) => void;
+  /** 把這筆紀錄改到其他個案（可復原）。 */
+  moveTo: (visitId: string, fromPatientId: string) => void;
 }
 
 const Ctx = createContext<Flows | null>(null);
@@ -94,14 +98,14 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
 
   const runImport = useCallback(
     async (files: File[], patient: Patient) => {
-      const { audio, docs, rejected } = classifyFiles(files);
+      const { audio, docs } = classifyFiles(files);
       if (audio.length + docs.length === 0) {
         toast("沒有可用的檔案（支援 PDF、照片、錄音檔）");
         return;
       }
-      const id = await importToPatient(patient.id, [...audio, ...docs]);
-      toast(rejected.length ? `已加入 ${audio.length + docs.length} 個檔案，略過 ${rejected.length} 個不支援的檔案` : `已加入 ${audio.length + docs.length} 個檔案，開始整理`);
-      navigate(`/v/${id}`);
+      const { visitId, result } = await importToPatient(patient.id, files);
+      toast(storeSummary(result, "，開始整理"), { ms: result.skipped.length ? 5000 : undefined });
+      if (visitId) navigate(`/v/${visitId}`);
     },
     [navigate, toast],
   );
@@ -131,7 +135,24 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
     input.click();
   };
 
-  const value: Flows = { openNew, record, recordForSomeone, importFiles, findPatient, editPatient };
+  const moveTo = useCallback(
+    (visitId: string, fromPatientId: string) =>
+      findPatient(
+        "改到哪一位？",
+        async (p) => {
+          const res = await moveVisit(visitId, p.id);
+          if (!res) return;
+          toast(res.copied ? "已改到其他個案，之前複製的內容不適用，請重新確認後再複製" : "已改到其他個案", {
+            action: { label: "復原", run: () => void res.undo() },
+            ms: res.copied ? 6000 : undefined,
+          });
+        },
+        fromPatientId,
+      ),
+    [findPatient, toast],
+  );
+
+  const value: Flows = { openNew, record, recordForSomeone, importFiles, findPatient, editPatient, moveTo };
 
   return (
     <Ctx.Provider value={value}>

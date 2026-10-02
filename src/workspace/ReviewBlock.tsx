@@ -5,8 +5,7 @@ import { Critter } from "../components/Critter";
 import { Name } from "../components/Name";
 import { Button, Pill, cx } from "../components/ui";
 import { useFlows } from "../app/Flows";
-import { useToast } from "../components/Toast";
-import { confirmChanges, confirmDocs, confirmIdentity, dismissChange, moveVisit, openChanges, openConflicts, resolveConflict, setVital } from "../lib/actions";
+import { confirmChanges, confirmDocs, confirmIdentity, confirmVital, dismissChange, openChanges, openConflicts, resolveConflict, setVital } from "../lib/actions";
 import { canPlaySource, playAt } from "../lib/audio";
 import { clock, duration } from "../lib/format";
 import type { Patient, Visit } from "../lib/model";
@@ -17,7 +16,6 @@ const CHANGE_LABEL = { new: "新", worse: "加重", better: "改善", resolved: 
 /** 先看這裡：全 App 唯一的關卡（身分、待確認數值、文件重點、評估異動）。 */
 export function ReviewBlock({ visit, patient, onEditVital }: { visit: Visit; patient: Patient; onEditVital: (key: VitalReading["key"]) => void }) {
   const flows = useFlows();
-  const toast = useToast();
   const a = visit.analysis;
   if (!a) return null;
 
@@ -58,19 +56,7 @@ export function ReviewBlock({ visit, patient, onEditVital }: { visit: Visit; pat
               <Button variant="primary" onClick={() => confirmIdentity(visit.id)}>
                 是 <Name name={patient.name} />
               </Button>
-              <Button
-                onClick={() =>
-                  flows.findPatient(
-                    "改到哪一位？",
-                    async (p) => {
-                      const undo = await moveVisit(visit.id, p.id);
-                      await confirmIdentity(visit.id);
-                      toast("已改到其他個案", undo ? { action: { label: "復原", run: () => void undo() } } : undefined);
-                    },
-                    patient.id,
-                  )
-                }
-              >
+              <Button onClick={() => flows.moveTo(visit.id, patient.id)}>
                 改到其他個案
               </Button>
             </div>
@@ -188,12 +174,12 @@ function VitalItem({ visit, r, onEdit }: { visit: Visit; r: VitalReading; onEdit
       )}
       <div className="mt-3 flex flex-wrap gap-2">
         {r.suggestion && (
-          <Button variant="primary" onClick={() => setVital(visit.id, r.key, r.suggestion, r.qualifier)}>
+          <Button variant="primary" onClick={() => setVital(visit.id, r.key, r.suggestion, visit.vitals[r.key]?.qualifier ?? r.qualifier)}>
             改成 {r.suggestion}
           </Button>
         )}
         {!r.suggestion && r.status !== "implausible" && (
-          <Button variant="primary" onClick={() => setVital(visit.id, r.key, r.value, r.qualifier)}>
+          <Button variant="primary" onClick={() => confirmVital(visit.id, r.key)}>
             {r.value} 沒錯
           </Button>
         )}

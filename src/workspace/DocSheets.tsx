@@ -94,7 +94,7 @@ export function RegenerateSheet({ open, onClose, visit, kind, title }: { open: b
             </Chip>
           ))}
         </div>
-        <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="其他要求（選填）" className={inputClass} />
+        <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="其他要求（選填）" maxLength={500} className={inputClass} />
         {keeps && <p className="rounded-2xl bg-pending-tint p-3 font-bold">你目前的版本會保留，新版本會放在旁邊讓你比較。</p>}
         <Button
           variant="primary"

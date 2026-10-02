@@ -19,6 +19,9 @@ interface SheetProps {
 export function Sheet({ open, onClose, title, children, footer, full, wide, tone }: SheetProps) {
   const id = useId();
   const panel = useRef<HTMLDivElement>(null);
+  // onClose 每次 render 都可能是新函式；用 ref 讓開關時的聚焦邏輯只在 open 改變時執行一次。
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
@@ -26,13 +29,17 @@ export function Sheet({ open, onClose, title, children, footer, full, wide, tone
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
       }
     };
     window.addEventListener("keydown", onKey, true);
     const t = setTimeout(() => {
-      const first = panel.current?.querySelector<HTMLElement>("[data-autofocus], input, textarea, select, button:not([aria-label='關閉'])");
-      first?.focus({ preventScroll: true });
+      const root = panel.current;
+      if (!root || root.contains(document.activeElement)) return;
+      const target =
+        root.querySelector<HTMLElement>("[data-autofocus]") ??
+        root.querySelector<HTMLElement>("input, textarea, select, button:not([aria-label='關閉'])");
+      target?.focus({ preventScroll: true });
     }, 60);
     document.body.style.overflow = "hidden";
     return () => {
@@ -41,7 +48,7 @@ export function Sheet({ open, onClose, title, children, footer, full, wide, tone
       document.body.style.overflow = "";
       prev?.focus?.({ preventScroll: true });
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

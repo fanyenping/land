@@ -269,4 +269,6 @@ export interface HealthResponse {
   ok: boolean;
   stt: string;
   llm: { mode: "claude" | "demo"; model: string | null };
+  /** 伺服器設定了機構通行碼：除 /api/health 外的請求都要帶 X-Access-Code。 */
+  auth?: boolean;
 }

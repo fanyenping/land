@@ -19,7 +19,7 @@ const VARIANT: Record<Variant, string> = {
   secondary: "bg-card text-ink sticker",
   ghost: "bg-transparent text-ink hover:bg-ink/5",
   soft: "bg-ink/[0.06] text-ink hover:bg-ink/10",
-  danger: "bg-danger text-ink sticker",
+  danger: "bg-danger text-[#141414] sticker",
 };
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

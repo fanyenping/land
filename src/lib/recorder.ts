@@ -29,7 +29,6 @@ class Recorder {
   private analyser: AnalyserNode | null = null;
   private raf = 0;
   private partId = "";
-  private seq = 0;
   private startedAt = "";
   private runStart = 0;
   private accumulated = 0;
@@ -38,6 +37,7 @@ class Recorder {
   private resolveStop: ((p: AudioPart | null) => void) | null = null;
   private expectedStop = false;
   private tick = 0;
+  private starting: Promise<boolean> | null = null;
 
   subscribe = (fn: () => void) => {
     this.listeners.add(fn);
@@ -55,7 +55,16 @@ class Recorder {
     return typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== "undefined";
   }
 
-  async start(visitId: string): Promise<boolean> {
+  /** 開始錄音；連點兩次只會啟動一個錄音器。 */
+  start(visitId: string): Promise<boolean> {
+    if (this.starting) return this.starting;
+    this.starting = this.doStart(visitId).finally(() => {
+      this.starting = null;
+    });
+    return this.starting;
+  }
+
+  private async doStart(visitId: string): Promise<boolean> {
     if (this.snap.state === "recording" || this.snap.state === "paused") {
       if (this.snap.visitId === visitId) return true;
       await this.stop();
@@ -84,14 +93,18 @@ class Recorder {
     const mimeType = pickMime();
     this.media = new MediaRecorder(this.stream, mimeType ? { mimeType, audioBitsPerSecond: 32000 } : undefined);
     this.partId = newId();
-    this.seq = 0;
     this.startedAt = new Date().toISOString();
     this.accumulated = 0;
     this.runStart = performance.now();
     this.expectedStop = false;
 
+    // 以區域常數保存本段資訊，避免之後的開始／停止改到這段的片段歸屬。
+    const partId = this.partId;
+    const startedAt = this.startedAt;
+    const partMime = this.media.mimeType || mimeType || "audio/webm";
+    let seq = 0;
     this.media.ondataavailable = (e) => {
-      if (e.data.size > 0) void db.chunks.add({ partId: this.partId, visitId, seq: this.seq++, blob: e.data });
+      if (e.data.size > 0) void db.chunks.add({ partId, visitId, seq: seq++, blob: e.data, mimeType: partMime, startedAt });
     };
     this.media.onstop = () => void this.finalize();
     this.stream.getAudioTracks()[0]?.addEventListener("ended", () => {
@@ -239,19 +252,23 @@ export async function recoverOrphanChunks() {
     await updateVisit(v.id, { status: "interrupted" });
   }
   const chunks = await db.chunks.toArray();
-  const parts = new Map<string, string>();
-  for (const c of chunks) parts.set(c.partId, c.visitId);
-  for (const [partId, visitId] of parts) {
-    if (recorder.getSnapshot().visitId === visitId) continue;
-    const visit = await db.visits.get(visitId);
+  const parts = new Map<string, { visitId: string; mimeType: string; startedAt: string; count: number }>();
+  for (const c of chunks) {
+    const p = parts.get(c.partId);
+    if (p) p.count++;
+    else parts.set(c.partId, { visitId: c.visitId, mimeType: c.mimeType ?? "audio/webm", startedAt: c.startedAt ?? new Date().toISOString(), count: 1 });
+  }
+  for (const [partId, info] of parts) {
+    if (recorder.getSnapshot().visitId === info.visitId) continue;
+    const visit = await db.visits.get(info.visitId);
     if (!visit) {
       await db.chunks.where("partId").equals(partId).delete();
       continue;
     }
-    const part = await assemblePart(partId, visitId, "audio/webm", 0, new Date().toISOString(), null);
+    // 片段每秒產生一個，片段數約等於秒數。
+    const part = await assemblePart(partId, info.visitId, info.mimeType, info.count * 1000, info.startedAt, null);
     if (part) {
-      part.durationMs = await audioDuration(await db.blobs.get(part.blobKey).then((b) => b!.blob));
-      await updateVisit(visitId, (v) => ({ parts: [...v.parts, part], status: v.status === "scheduled" ? "interrupted" : v.status }));
+      await updateVisit(info.visitId, (v) => ({ parts: [...v.parts, part], status: v.status === "scheduled" ? "interrupted" : v.status }));
     }
   }
 }

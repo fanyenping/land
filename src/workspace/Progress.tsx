@@ -1,6 +1,9 @@
-import { Check, RefreshCw } from "lucide-react";
+import { useState } from "react";
+import { useNavigate } from "react-router";
+import { Check, KeyRound, RefreshCw } from "lucide-react";
 import { Critter } from "../components/Critter";
-import { Button, cx } from "../components/ui";
+import { Button, Spinner, cx } from "../components/ui";
+import { probeEngine } from "../lib/api";
 import { useNow } from "../lib/hooks";
 import { STAGE_LABEL, type Stage, type Visit } from "../lib/model";
 import { processVisit } from "../lib/pipeline";
@@ -10,6 +13,14 @@ const STAGES: Stage[] = ["upload", "transcribe", "analyze", "write"];
 /** 處理中：四步驟文字進度，永遠看得到在做什麼（不只轉圈圈）。 */
 export function Progress({ visit }: { visit: Visit }) {
   const now = useNow(1000);
+  const navigate = useNavigate();
+  const [retrying, setRetrying] = useState(false);
+  const retryNow = async () => {
+    setRetrying(true);
+    await probeEngine(true);
+    await processVisit(visit.id);
+    setRetrying(false);
+  };
   const stages = visit.parts.length ? STAGES : STAGES.filter((s) => s === "analyze" || s === "write");
   const currentIndex = visit.stage ? stages.indexOf(visit.stage) : visit.status === "waiting" ? 0 : -1;
   const slow = visit.stageStartedAt && now.getTime() - Date.parse(visit.stageStartedAt) > 60_000;
@@ -25,9 +36,20 @@ export function Progress({ visit }: { visit: Visit }) {
           </div>
         </div>
         <p className="mb-3 text-[0.95rem] text-ink-soft">錄音與文件都還在這台裝置。代碼：{visit.error?.code ?? "unknown"}</p>
-        <Button variant="primary" size="lg" block icon={<RefreshCw size={20} />} onClick={() => void processVisit(visit.id)}>
-          重試
-        </Button>
+        {visit.error?.code === "unauthorized" ? (
+          <div className="grid gap-2.5 sm:grid-cols-2">
+            <Button variant="primary" size="lg" block icon={<KeyRound size={20} />} onClick={() => navigate("/settings")}>
+              到設定輸入通行碼
+            </Button>
+            <Button size="lg" block icon={<RefreshCw size={20} />} onClick={() => void processVisit(visit.id)}>
+              重試
+            </Button>
+          </div>
+        ) : (
+          <Button variant="primary" size="lg" block icon={<RefreshCw size={20} />} onClick={() => void processVisit(visit.id)}>
+            重試
+          </Button>
+        )}
       </section>
     );
   }
@@ -37,8 +59,10 @@ export function Progress({ visit }: { visit: Visit }) {
       <div className="mb-4 flex items-center gap-3">
         <Critter kind={visit.status === "waiting" ? "offline" : "processing"} size={56} animate={visit.status === "processing"} />
         <div>
-          <h2 className="font-round text-[1.4rem] font-extrabold">{visit.status === "waiting" ? "等網路，連上後自動繼續" : "整理中"}</h2>
-          <p className="font-bold opacity-75">{visit.status === "waiting" ? "錄音已安全存在這台裝置。" : slow ? "比平常慢，仍在處理中。可以先離開，好了會出現在今日清單。" : "可以先收東西，好了會出現在這裡。"}</p>
+          <h2 className="font-round text-[1.4rem] font-extrabold">
+            {visit.status === "waiting" ? (navigator.onLine ? "連不上 AI 伺服器，恢復後自動繼續" : "等網路，連上後自動繼續") : "整理中"}
+          </h2>
+          <p className="font-bold opacity-75">{visit.status === "waiting" ? "錄音與文件已安全存在這台裝置。" : slow ? "比平常慢，仍在處理中。可以先離開，好了會出現在今日清單。" : "可以先收東西，好了會出現在這裡。"}</p>
         </div>
       </div>
       <ol className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -61,6 +85,11 @@ export function Progress({ visit }: { visit: Visit }) {
           );
         })}
       </ol>
+      {visit.status === "waiting" && (
+        <Button className="mt-4" icon={retrying ? <Spinner size={16} /> : <RefreshCw size={18} />} disabled={retrying} onClick={() => void retryNow()}>
+          立即重試
+        </Button>
+      )}
     </section>
   );
 }

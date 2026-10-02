@@ -1,4 +1,4 @@
-import { probeEngine } from "../lib/api";
+import { probeEngine, setAccessCode } from "../lib/api";
 import { applyRetention, db, getSettings } from "../lib/db";
 import { startAutoResume } from "../lib/pipeline";
 import { recorder, recoverOrphanChunks } from "../lib/recorder";
@@ -7,12 +7,15 @@ import { recorder, recoverOrphanChunks } from "../lib/recorder";
 export async function boot() {
   const s = await getSettings();
   applyAppearance(s.theme, s.size);
+  setAccessCode(s.accessCode ?? "");
   db.settings.hook("updating", (mods, _key, obj) => {
     const next = { ...obj, ...(mods as object) } as typeof obj;
     applyAppearance(next.theme, next.size);
+    setAccessCode(next.accessCode ?? "");
   });
   db.settings.hook("creating", (_key, obj) => {
     applyAppearance(obj.theme, obj.size);
+    setAccessCode(obj.accessCode ?? "");
   });
 
   try {

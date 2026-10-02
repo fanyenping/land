@@ -45,7 +45,8 @@ export function Queue() {
     if (!desktop) return;
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
-      if (t.closest("input, textarea, [role=dialog]") || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (t.closest("input, textarea, select, [contenteditable], [role=dialog]") || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
       if (e.key !== "j" && e.key !== "k" && e.key !== "J" && e.key !== "K") return;
       const list = [...ordered, ...recent];
       const i = list.findIndex((v) => v.id === selected);
