@@ -89,6 +89,17 @@ export interface DocumentSummary {
   patientHint: string | null;
 }
 
+/** 不同來源互相矛盾、需要護理師選擇的事實（生命徵象的衝突用 VitalReading.status）。 */
+export interface SourceConflict {
+  id: string;
+  /** 例如「過敏史」。 */
+  topic: string;
+  text: string;
+  /** 各來源的說法，例如「病摘：無過敏」「錄音：對盤尼西林過敏」。 */
+  options: string[];
+  evidence: string | null;
+}
+
 export interface Analysis {
   /** 一句話總結本次訪視（給今日卡「上次重點」用）。 */
   summary: string;
@@ -114,6 +125,8 @@ export interface Analysis {
   missingDomains: string[];
   /** 例如「02:10–02:30 疑似台語，轉寫不完整」。 */
   languageNotes: string[];
+  /** 跨來源衝突（先看這裡第 3 類，擋全部複製）；舊資料可能沒有這個欄位。 */
+  conflicts?: SourceConflict[];
 }
 
 export type DocKind = "record" | "plan" | "edu";
@@ -219,11 +232,15 @@ export interface GenerateRequest {
   };
   /** 只有匯入文件、沒有今日訪視錄音時為 true（收案紀錄模板）。 */
   intakeOnly: boolean;
+  /** 上次已確認的訪視資料：異常值提醒句「較前次（09/18，132/78 mmHg）上升」用。 */
+  previous?: PreviousVisit | null;
 }
 
 export interface GenerateResponse {
   doc: GeneratedDoc;
   meta: AiMeta;
+  /** 輸出檢核的提醒（例如找不到依據而被移除的數字），給護理師看，不含在文件內。 */
+  warnings?: string[];
 }
 
 export type TranslateLang = "id" | "vi" | "th";
