@@ -91,7 +91,7 @@ class Recorder {
     this.expectedStop = false;
 
     this.media.ondataavailable = (e) => {
-      if (e.data.size > 0) void db.chunks.add({ partId: this.partId, seq: this.seq++, blob: e.data });
+      if (e.data.size > 0) void db.chunks.add({ partId: this.partId, visitId, seq: this.seq++, blob: e.data });
     };
     this.media.onstop = () => void this.finalize();
     this.stream.getAudioTracks()[0]?.addEventListener("ended", () => {
@@ -234,16 +234,25 @@ export const recorder = new Recorder();
  */
 export async function recoverOrphanChunks() {
   const live = await db.visits.where("status").anyOf("recording", "paused").toArray();
-  const chunkParts = new Set((await db.chunks.toArray()).map((c) => c.partId));
   for (const v of live) {
     if (recorder.getSnapshot().visitId === v.id) continue;
     await updateVisit(v.id, { status: "interrupted" });
   }
-  if (chunkParts.size === 0 || live.length === 0) return;
-  const target = live[0];
-  for (const partId of chunkParts) {
-    const part = await assemblePart(partId, target.id, "audio/webm", 0, new Date().toISOString(), null);
-    if (part) await updateVisit(target.id, (v) => ({ parts: [...v.parts, part] }));
+  const chunks = await db.chunks.toArray();
+  const parts = new Map<string, string>();
+  for (const c of chunks) parts.set(c.partId, c.visitId);
+  for (const [partId, visitId] of parts) {
+    if (recorder.getSnapshot().visitId === visitId) continue;
+    const visit = await db.visits.get(visitId);
+    if (!visit) {
+      await db.chunks.where("partId").equals(partId).delete();
+      continue;
+    }
+    const part = await assemblePart(partId, visitId, "audio/webm", 0, new Date().toISOString(), null);
+    if (part) {
+      part.durationMs = await audioDuration(await db.blobs.get(part.blobKey).then((b) => b!.blob));
+      await updateVisit(visitId, (v) => ({ parts: [...v.parts, part], status: v.status === "scheduled" ? "interrupted" : v.status }));
+    }
   }
 }
 

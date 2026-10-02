@@ -6,7 +6,7 @@ import { Name } from "../components/Name";
 import { Button, Pill, cx } from "../components/ui";
 import { useFlows } from "../app/Flows";
 import { useToast } from "../components/Toast";
-import { confirmChanges, confirmDocs, confirmIdentity, dismissChange, moveVisit, openChanges, setVital } from "../lib/actions";
+import { confirmChanges, confirmDocs, confirmIdentity, dismissChange, moveVisit, openChanges, openConflicts, resolveConflict, setVital } from "../lib/actions";
 import { canPlaySource, playAt } from "../lib/audio";
 import { clock, duration } from "../lib/format";
 import type { Patient, Visit } from "../lib/model";
@@ -24,10 +24,11 @@ export function ReviewBlock({ visit, patient, onEditVital }: { visit: Visit; pat
   const vitals = pendingVitals(visit);
   const unclear = a.docFacts.filter((f) => f.unclear);
   const changes = openChanges(visit);
+  const conflicts = openConflicts(visit);
   const identity = a.identityConcern && !visit.identityConfirmed;
   const needDocs = unclear.length > 0 && !visit.docsChecked;
   const needChanges = changes.length > 0 && !visit.changesConfirmed;
-  const count = (identity ? 1 : 0) + vitals.length + (needDocs ? 1 : 0) + (needChanges ? 1 : 0);
+  const count = (identity ? 1 : 0) + vitals.length + conflicts.length + (needDocs ? 1 : 0) + (needChanges ? 1 : 0);
 
   if (count === 0) {
     const who = visit.changesConfirmed?.by ?? visit.reviewedBy;
@@ -78,6 +79,22 @@ export function ReviewBlock({ visit, patient, onEditVital }: { visit: Visit; pat
 
         {vitals.map((r) => (
           <VitalItem key={r.key} visit={visit} r={r} onEdit={() => onEditVital(r.key)} />
+        ))}
+
+        {conflicts.map((c) => (
+          <Item key={c.id}>
+            <p className="font-bold">
+              {c.topic}：來源說法不一致
+            </p>
+            <p className="mt-1 text-[1rem] text-ink-soft">{c.text}</p>
+            <div className="mt-3 flex flex-col gap-2">
+              {c.options.map((o) => (
+                <Button key={o} className="justify-start text-left" onClick={() => resolveConflict(visit.id, c.id, o)}>
+                  {o}
+                </Button>
+              ))}
+            </div>
+          </Item>
         ))}
 
         {needDocs && (

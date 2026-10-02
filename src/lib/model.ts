@@ -146,6 +146,8 @@ export interface Visit {
   dismissedChanges: string[];
   docsChecked: { by: string; at: string } | null;
   identityConfirmed: boolean;
+  /** 跨來源衝突：護理師選定的說法。 */
+  conflictChoices: Record<string, string>;
   suggestions: Record<string, "adopted" | "skipped">;
   outputs: Record<DocKind, OutputState>;
   translations: Partial<Record<TranslateLang, { text: string; at: string; status: "writing" | "done" | "failed"; error: string | null }>>;

@@ -187,6 +187,7 @@ async function writeDoc(visitId: string, kind: DocKind, opts: WriteOptions) {
       clinicPhone: settings.clinicPhone || null,
     },
     intakeOnly: visit.intakeOnly,
+    previous: patient.last,
   };
 
   try {
@@ -236,6 +237,7 @@ export async function reprocessWithNewMaterial(visitId: string, audioAdded: bool
       changesConfirmed: null,
       dismissedChanges: [],
       docsChecked: null,
+      conflictChoices: {},
       suggestions: {},
       reviewedAt: null,
       reviewedBy: null,
@@ -295,6 +297,7 @@ export function newVisit(patientId: string, date: string, time: string | null): 
     dismissedChanges: [],
     docsChecked: null,
     identityConfirmed: true,
+    conflictChoices: {},
     suggestions: {},
     outputs: { record: emptyOutput(), plan: emptyOutput(), edu: emptyOutput() },
     translations: {},

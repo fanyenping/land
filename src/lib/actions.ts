@@ -255,9 +255,36 @@ export async function decideSuggestion(visitId: string, id: string, decision: "a
 }
 
 export interface Blocker {
-  kind: "identity" | "vital" | "docs" | "changes";
+  kind: "identity" | "vital" | "docs" | "changes" | "conflict";
   label: string;
   key?: VitalKey;
+}
+
+export function openConflicts(v: Visit) {
+  return (v.analysis?.conflicts ?? []).filter((c) => !(v.conflictChoices ?? {})[c.id]);
+}
+
+/** 選定衝突的說法：寫入分析事實，並讓未動過的草稿依選定內容重寫。 */
+export async function resolveConflict(visitId: string, conflictId: string, choice: string) {
+  let topic = "";
+  await updateVisit(visitId, (v) => {
+    const c = v.analysis?.conflicts?.find((x) => x.id === conflictId);
+    if (!v.analysis || !c) return;
+    topic = c.topic;
+    return {
+      conflictChoices: { ...(v.conflictChoices ?? {}), [conflictId]: choice },
+      analysis: {
+        ...v.analysis,
+        findings: [...v.analysis.findings, { domain: c.topic, text: `${c.topic}：${choice}（護理師確認）`, sourceQuote: null, sourceMs: null, origin: "typed" }],
+      },
+    };
+  });
+  if (!topic) return;
+  const v = await db.visits.get(visitId);
+  if (!v) return;
+  for (const k of ["record", "plan", "edu"] as DocKind[]) {
+    if (v.outputs[k].status === "draft") void regenerate(visitId, k, [], null);
+  }
 }
 
 export function openChanges(v: Visit) {
@@ -270,6 +297,7 @@ export function blockersFor(v: Visit, kind: DocKind | "all"): Blocker[] {
   if (!v.analysis) return out;
   if (v.analysis.identityConcern && !v.identityConfirmed) out.push({ kind: "identity", label: "確認個案身分" });
   for (const r of pendingVitals(v)) out.push({ kind: "vital", label: `確認${VITAL_LABEL[r.key]}`, key: r.key });
+  for (const c of openConflicts(v)) out.push({ kind: "conflict", label: `選定${c.topic}` });
   if (v.analysis.docFacts.some((f) => f.unclear) && !v.docsChecked) out.push({ kind: "docs", label: "對照文件重點" });
   if ((kind === "plan" || kind === "all") && openChanges(v).length > 0 && !v.changesConfirmed) out.push({ kind: "changes", label: "確認評估異動" });
   return out;

@@ -13,6 +13,7 @@ export interface StoredBlob {
 export interface StoredChunk {
   id?: number;
   partId: string;
+  visitId: string;
   seq: number;
   blob: Blob;
 }
