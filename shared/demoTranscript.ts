@@ -1,6 +1,7 @@
 /**
  * 示範用逐字稿（虛構個案，非真實病人資料）。
- * 模擬一次約 26 分鐘、分兩段錄音的居家訪視：護理師、個案女兒、印尼籍看護。
+ * 模擬一次約 24 分鐘、分兩段錄音的居家訪視：護理師、個案女兒、印尼籍看護。
+ * 刻意保留一個常見的語音辨識錯誤（「三十六點八」被轉成「十六點八」），用來示範數值核對。
  */
 export interface DemoSegment {
   startMs: number;
@@ -23,7 +24,7 @@ export const DEMO_SEGMENTS: DemoSegment[] = [
   { startMs: s(0, 13), endMs: s(0, 24), speaker: "S2", text: "好，謝謝你。她這禮拜痰比較多，晚上咳得比較厲害，我有點擔心。", confidence: 0.92 },
   { startMs: s(0, 25), endMs: s(0, 31), speaker: "S1", text: "痰是什麼顏色？比較黏還是比較稀？", confidence: 0.95 },
   { startMs: s(0, 32), endMs: s(0, 41), speaker: "S3", text: "黃黃的，有點黏，一天大概抽四五次。", confidence: 0.86 },
-  { startMs: s(1, 10), endMs: s(1, 32), speaker: "S1", text: "我先量生命徵象。體溫三十六點八度，脈搏八十八下，呼吸十八次，血壓一百四十二之八十六，血氧九十六趴，沒有用氧氣。", confidence: 0.9 },
+  { startMs: s(1, 10), endMs: s(1, 32), speaker: "S1", text: "我先量生命徵象。體溫十六點八度，脈搏八十八下，呼吸十八次，血壓一百四十二之八十六，血氧九十六趴，沒有用氧氣。", confidence: 0.62 },
   { startMs: s(1, 33), endMs: s(1, 41), speaker: "S1", text: "飯前血糖剛剛測是一百六十八。", confidence: 0.83 },
   { startMs: s(1, 42), endMs: s(1, 52), speaker: "S2", text: "早上灌食之前測的，她最近灌完有時候會嗆到。", confidence: 0.9 },
   { startMs: s(2, 5), endMs: s(2, 20), speaker: "S1", text: "阿嬤叫得醒，眼睛會張開看我，問她會點頭，但是講話還是講不清楚，跟上次差不多。", confidence: 0.91 },

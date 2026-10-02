@@ -2,102 +2,111 @@
 
 /* ---------------------------------------------------------------
    TaiOne care · We care — design tokens（見 docs/03-design-system.md）
+   飽和鮮豔版：參考「造型角色」與「Today / Saved / Chats」的高彩度色票
    --------------------------------------------------------------- */
 :root {
   color-scheme: light;
-  --paper: #fff7ef;
-  --blush: #fbe3ee;
+  --paper: #f4f0ea;
+  --grid: rgb(20 20 20 / 0.055);
   --card: #ffffff;
-  --cream: #fff9dc;
-  --ink: #24252c;
-  --ink-soft: #5d5e68;
-  --ink-faint: #8b8b95;
-  --line: #24252c;
-  --hairline: rgb(36 37 44 / 0.12);
+  --sunken: #ebe6df;
+  --night: #141414;
+  --night-ink: #fbf7f0;
+  --ink: #141414;
+  --ink-soft: #55535a;
+  --ink-faint: #8a8790;
+  --line: #141414;
+  --hairline: rgb(20 20 20 / 0.1);
+  --critter-ink: #141414;
 
-  --record: #ee7a8e;
-  --record-tint: #fde3e8;
-  --plan: #4c9a8c;
-  --plan-tint: #dcefe9;
-  --edu: #a9aef0;
-  --edu-tint: #e9eafc;
-  --audio: #f9ad72;
-  --audio-tint: #feeadb;
-  --pdf: #fff1b8;
-  --pending: #ffd45c;
-  --pending-tint: #fff1c2;
-  --ok: #2f7d62;
-  --ok-tint: #dff2e8;
-  --danger: #c8413a;
-  --danger-tint: #fde4e1;
+  /* 三份文件的身分色（看顏色就知道是哪一份） */
+  --record: #ff5fa8;      /* 護理紀錄｜桃紅 */
+  --record-tint: #ffe0ee;
+  --plan: #00b36b;        /* 護理計畫｜翡翠綠 */
+  --plan-tint: #d3f6e4;
+  --edu: #1ea7ff;         /* 家屬衛教｜天空藍 */
+  --edu-tint: #d6efff;
+
+  /* 來源與狀態 */
+  --audio: #ff8a00;       /* 錄音｜橘 */
+  --audio-tint: #ffe9cf;
+  --pdf: #a35ff0;         /* PDF｜葡萄紫 */
+  --pdf-tint: #efe3fd;
+  --pending: #ffc81a;     /* 待確認｜向日葵黃（全 App 唯一「請看一眼」色） */
+  --pending-tint: #fff1bf;
+  --danger: #ff4a1c;      /* 異常／失敗｜朱橘 */
+  --danger-tint: #ffe0d6;
+  --ok: #0f8d66;
+  --ok-tint: #d6f3e7;
+
+  /* 角色輔助色 */
+  --coral: #ff5a4e;
+  --cobalt: #1f5fe6;
+  --bubblegum: #ff9ccc;
+  --forest: #0f8d66;
+  --grape: #9b5be0;
 
   --shadow-sticker: 0 4px 0 var(--ink);
-  --shadow-soft: 0 18px 40px -24px rgb(36 37 44 / 0.45);
-  --stripe: rgb(36 37 44 / 0.035);
+  --shadow-soft: 0 22px 44px -26px rgb(20 20 20 / 0.5);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --paper: #16161b;
-    --blush: #2a2030;
-    --card: #202027;
-    --cream: #2a2818;
-    --ink: #f4efe8;
-    --ink-soft: #bcb8c4;
+    --paper: #121214;
+    --grid: rgb(255 255 255 / 0.04);
+    --card: #1d1d21;
+    --sunken: #26262b;
+    --night: #000000;
+    --night-ink: #fbf7f0;
+    --ink: #f6f2ea;
+    --ink-soft: #c2bec8;
     --ink-faint: #8f8b98;
-    --line: #f4efe8;
-    --hairline: rgb(244 239 232 / 0.14);
-    --record: #e5788b;
-    --record-tint: #3a242b;
-    --plan: #5bae9f;
-    --plan-tint: #1d322e;
-    --edu: #9ea3ea;
-    --edu-tint: #26273d;
-    --audio: #e99a5e;
-    --audio-tint: #3a2a1d;
-    --pdf: #3b3520;
-    --pending: #f2c14e;
-    --pending-tint: #3a311a;
-    --ok: #5fc49b;
-    --ok-tint: #193128;
-    --danger: #ff8a80;
-    --danger-tint: #3b1f1d;
+    --line: #f6f2ea;
+    --hairline: rgb(246 242 234 / 0.13);
+    --record-tint: #3d2030;
+    --plan-tint: #12332a;
+    --edu-tint: #132c40;
+    --audio-tint: #3b2914;
+    --pdf-tint: #2c2040;
+    --pending-tint: #3c3114;
+    --danger-tint: #40211a;
+    --ok: #4fd6a6;
+    --ok-tint: #12332a;
     --shadow-sticker: 0 4px 0 #000;
-    --shadow-soft: 0 18px 40px -24px rgb(0 0 0 / 0.8);
-    --stripe: rgb(255 255 255 / 0.025);
+    --shadow-soft: 0 22px 44px -26px rgb(0 0 0 / 0.9);
   }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --paper: #16161b;
-  --blush: #2a2030;
-  --card: #202027;
-  --cream: #2a2818;
-  --ink: #f4efe8;
-  --ink-soft: #bcb8c4;
+  --paper: #121214;
+  --grid: rgb(255 255 255 / 0.04);
+  --card: #1d1d21;
+  --sunken: #26262b;
+  --night: #000000;
+  --night-ink: #fbf7f0;
+  --ink: #f6f2ea;
+  --ink-soft: #c2bec8;
   --ink-faint: #8f8b98;
-  --line: #f4efe8;
-  --hairline: rgb(244 239 232 / 0.14);
-  --record: #e5788b;
-  --record-tint: #3a242b;
-  --plan: #5bae9f;
-  --plan-tint: #1d322e;
-  --edu: #9ea3ea;
-  --edu-tint: #26273d;
-  --audio: #e99a5e;
-  --audio-tint: #3a2a1d;
-  --pdf: #3b3520;
-  --pending: #f2c14e;
-  --pending-tint: #3a311a;
-  --ok: #5fc49b;
-  --ok-tint: #193128;
-  --danger: #ff8a80;
-  --danger-tint: #3b1f1d;
+  --line: #f6f2ea;
+  --hairline: rgb(246 242 234 / 0.13);
+  --record-tint: #3d2030;
+  --plan-tint: #12332a;
+  --edu-tint: #132c40;
+  --audio-tint: #3b2914;
+  --pdf-tint: #2c2040;
+  --pending-tint: #3c3114;
+  --danger-tint: #40211a;
+  --ok: #4fd6a6;
+  --ok-tint: #12332a;
   --shadow-sticker: 0 4px 0 #000;
-  --shadow-soft: 0 18px 40px -24px rgb(0 0 0 / 0.8);
-  --stripe: rgb(255 255 255 / 0.025);
+  --shadow-soft: 0 22px 44px -26px rgb(0 0 0 / 0.9);
+}
+
+/* 大字模式（設定 → 字級） */
+:root[data-size="large"] {
+  font-size: 112.5%;
 }
 
 @theme {
@@ -106,9 +115,10 @@
   --font-num: "Bricolage Grotesque", "Noto Sans TC", ui-sans-serif, sans-serif;
 
   --color-paper: var(--paper);
-  --color-blush: var(--blush);
   --color-card: var(--card);
-  --color-cream: var(--cream);
+  --color-sunken: var(--sunken);
+  --color-night: var(--night);
+  --color-night-ink: var(--night-ink);
   --color-ink: var(--ink);
   --color-ink-soft: var(--ink-soft);
   --color-ink-faint: var(--ink-faint);
@@ -123,55 +133,80 @@
   --color-audio: var(--audio);
   --color-audio-tint: var(--audio-tint);
   --color-pdf: var(--pdf);
+  --color-pdf-tint: var(--pdf-tint);
   --color-pending: var(--pending);
   --color-pending-tint: var(--pending-tint);
-  --color-ok: var(--ok);
-  --color-ok-tint: var(--ok-tint);
   --color-danger: var(--danger);
   --color-danger-tint: var(--danger-tint);
+  --color-ok: var(--ok);
+  --color-ok-tint: var(--ok-tint);
+  --color-coral: var(--coral);
+  --color-cobalt: var(--cobalt);
+  --color-bubblegum: var(--bubblegum);
+  --color-forest: var(--forest);
+  --color-grape: var(--grape);
 
-  --radius-card: 28px;
+  --radius-card: 30px;
   --radius-tile: 22px;
-  --radius-btn: 16px;
 
   --shadow-sticker: var(--shadow-sticker);
   --shadow-soft: var(--shadow-soft);
 
-  --animate-rise: rise 520ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-rise: rise 480ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
   --animate-pop: pop 380ms cubic-bezier(0.3, 1.6, 0.5, 1) both;
   --animate-pulse-ring: pulse-ring 1.6s ease-out infinite;
+  --animate-sheet: sheet 320ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
+  --animate-fade: fade 200ms ease both;
 
   @keyframes rise {
-    from { opacity: 0; transform: translateY(14px); }
+    from { opacity: 0; transform: translateY(16px); }
     to { opacity: 1; transform: none; }
   }
   @keyframes pop {
-    0% { transform: scale(0.96); }
+    0% { transform: scale(0.94); }
     60% { transform: scale(1.04); }
     100% { transform: scale(1); }
   }
   @keyframes pulse-ring {
-    0% { transform: scale(1); opacity: 0.55; }
-    100% { transform: scale(1.55); opacity: 0; }
+    0% { transform: scale(1); opacity: 0.6; }
+    100% { transform: scale(1.6); opacity: 0; }
   }
+  @keyframes sheet {
+    from { transform: translateY(100%); }
+    to { transform: none; }
+  }
+  @keyframes fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+}
+
+@keyframes critter-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes critter-bob {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-4%) scale(1.04, 0.97); }
 }
 
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  background: var(--paper);
 }
 
 body {
   margin: 0;
+  min-height: 100dvh;
   background-color: var(--paper);
-  background-image: repeating-linear-gradient(
-    -38deg,
-    var(--stripe) 0 1px,
-    transparent 1px 22px
-  );
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 28px 28px;
+  background-attachment: fixed;
   color: var(--ink);
   font-family: var(--font-sans);
-  font-size: 17px;
+  font-size: 1.0625rem;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
@@ -179,7 +214,6 @@ body {
 
 h1, h2, h3, .font-round {
   font-family: var(--font-round);
-  letter-spacing: 0.01em;
 }
 
 .num {
@@ -191,42 +225,39 @@ h1, h2, h3, .font-round {
 :focus-visible {
   outline: 3px solid var(--ink);
   outline-offset: 3px;
-  border-radius: 12px;
 }
 
-button, [role="button"] {
+button, [role="button"], a {
   -webkit-user-select: none;
   user-select: none;
+  touch-action: manipulation;
 }
 
 /* 細墨線元件 */
 .outline-ink {
-  box-shadow: inset 0 0 0 1.5px var(--line);
+  box-shadow: inset 0 0 0 2px var(--line);
 }
 
+/* 貼紙按鈕：墨線＋向下硬陰影，按下時壓下去 */
 .sticker {
-  box-shadow: inset 0 0 0 1.5px var(--line), var(--shadow-sticker);
-  transition: transform 120ms ease, box-shadow 120ms ease;
+  box-shadow: inset 0 0 0 2px var(--line), var(--shadow-sticker);
+  transition: transform 110ms ease, box-shadow 110ms ease;
 }
-.sticker:active {
+.sticker:active:not(:disabled) {
   transform: translateY(3px);
-  box-shadow: inset 0 0 0 1.5px var(--line), 0 1px 0 var(--ink);
+  box-shadow: inset 0 0 0 2px var(--line), 0 1px 0 var(--ink);
 }
 
-/* 卡片角落的等高線弧紋 */
-.contours {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='260' fill='none' stroke='%2324252c' stroke-opacity='.09' stroke-width='1.4'%3E%3Cpath d='M260 40c-60 0-90 40-150 40S20 30 0 60'/%3E%3Cpath d='M260 75c-60 0-95 42-155 42S18 70 0 98'/%3E%3Cpath d='M260 110c-60 0-100 44-160 44S16 110 0 136'/%3E%3Cpath d='M260 145c-60 0-105 46-165 46S14 150 0 174'/%3E%3Cpath d='M260 180c-60 0-110 48-170 48S12 190 0 212'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right -40px top -30px;
-}
-
-/* AI 推測、待確認的標示（金盞黃，研究 Q01） */
+/* AI 推測、待確認的標示（研究 Q01：黃色底） */
 .mark-pending {
-  background: linear-gradient(transparent 12%, var(--pending-tint) 12% 92%, transparent 92%);
-  box-shadow: inset 0 -2px 0 var(--pending);
-  border-radius: 4px;
-  padding: 0 2px;
+  background: var(--pending-tint);
+  box-shadow: inset 0 -2.5px 0 var(--pending);
+  border-radius: 6px;
+  padding: 0 3px;
 }
+
+.safe-top { padding-top: max(env(safe-area-inset-top), 0px); }
+.safe-bottom { padding-bottom: max(env(safe-area-inset-bottom), 0px); }
 
 .scrollbar-none::-webkit-scrollbar { display: none; }
 .scrollbar-none { scrollbar-width: none; }
