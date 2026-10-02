@@ -1,0 +1,45 @@
+import type { Context } from "hono";
+import { SttError, transcribeSegments, type AudioInput, type SttProvider } from "../stt";
+
+const AUDIO_TYPES = /^(audio\/|video\/webm|video\/mp4|application\/octet-stream)/;
+
+/**
+ * POST /api/transcribe — multipart，欄位 `audio` 可重複（多段錄音，依上傳順序合併）。
+ */
+export function transcribeRoute(stt: SttProvider) {
+  return async (c: Context) => {
+    const form = await c.req.formData();
+    const files = form.getAll("audio").filter((v): v is File => v instanceof File);
+    if (files.length === 0) {
+      return c.json({ error: { code: "no_audio", message: "沒有收到音檔，請重新選擇或錄音。" } }, 400);
+    }
+    if (files.length > 10) {
+      return c.json({ error: { code: "too_many", message: "一次最多合併 10 段錄音。" } }, 400);
+    }
+    const bad = files.find((f) => f.type && !AUDIO_TYPES.test(f.type));
+    if (bad) {
+      return c.json({ error: { code: "bad_type", message: `「${bad.name}」不是可辨識的音檔格式。` } }, 415);
+    }
+
+    const parts: AudioInput[] = await Promise.all(
+      files.map(async (f) => ({
+        data: new Uint8Array(await f.arrayBuffer()),
+        mimeType: f.type || "application/octet-stream",
+        filename: f.name || "recording.webm",
+      })),
+    );
+
+    try {
+      const transcript = await transcribeSegments(stt, parts, c.req.raw.signal);
+      return c.json({ transcript });
+    } catch (err) {
+      if (err instanceof SttError) {
+        return c.json(
+          { error: { code: "stt_failed", message: `語音轉文字失敗：${err.message}`, retryable: err.retryable } },
+          502,
+        );
+      }
+      throw err;
+    }
+  };
+}
