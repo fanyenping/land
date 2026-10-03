@@ -121,7 +121,7 @@ export function Recording() {
         </RoundButton>
       </header>
 
-      <main className="relative z-10 mx-auto flex w-full max-w-[560px] flex-1 flex-col items-center justify-center gap-4 px-5 pb-6">
+      <main className="relative z-10 mx-auto flex w-full max-w-[560px] flex-1 flex-col items-center justify-center gap-4 px-5 pb-[calc(env(safe-area-inset-bottom)+24px)]">
         {ended && !live && (
           <div className="w-full rounded-[24px] bg-pending p-4 font-bold outline-ink">
             錄音中斷了，前面 {duration(previousMs)} 已安全保存。可以繼續錄第 {visit.parts.length + 1} 段，或直接完成訪視。

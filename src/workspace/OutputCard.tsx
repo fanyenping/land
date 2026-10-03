@@ -88,10 +88,11 @@ export function OutputCard({
     const text = eduShareText(visit, patient, settings, withLang);
     // 先寫剪貼簿（點擊後第一個非同步動作），再確認與分享。
     const copied = await writeClipboard(text);
+    // 試用版只靠複製：沒複製成功就不要標成已確認。
+    if (TRIAL && !copied) return toast("無法寫入剪貼簿，請長按文字自行複製", { error: true });
     if (!confirmed) await confirmOnly(visit, "edu");
     const how = await shareToLine(text);
     if (how === "cancelled") return;
-    if (how === "copied" && !copied) return toast("無法寫入剪貼簿，請長按文字自行複製", { error: true });
     if (how === "copied") await markEduCopied(visit.id);
     else await markEduShared(visit.id);
     toast(how === "line" ? "已複製，正在開啟 LINE" : how === "copied" ? "已複製，請到 LINE 貼上給家屬" : "已分享");
@@ -107,7 +108,7 @@ export function OutputCard({
         </span>
         <div className="min-w-0 flex-1">
           <h2 className="font-round text-[1.35rem] font-extrabold leading-tight">{title}</h2>
-          <p className="truncate text-[0.92rem] font-bold">
+          <p className="text-[0.92rem] font-bold leading-snug">
             {statusLabel}
             {has && !writing ? `・${chars} 字` : ""}
             {out.copiedAt && !writing ? `・已複製 ${clock(out.copiedAt)}` : ""}
@@ -247,7 +248,7 @@ export function OutputCard({
                   <Button variant="primary" size="lg" block icon={<Send size={20} />} onClick={() => shareEdu()} disabled={out.status === "writing"}>
                     {TRIAL ? (confirmed ? "再複製（貼到 LINE）" : "確認並複製（貼到 LINE）") : confirmed ? "再分享到 LINE" : "確認並分享到 LINE"}
                   </Button>
-                  <div className="grid grid-cols-2 gap-2.5">
+                  <div className="grid grid-cols-2 gap-2.5 [:root[data-size=large]_&]:grid-cols-1">
                     <Button block icon={justCopied ? <Check size={20} strokeWidth={3} /> : <Copy size={19} />} onClick={copy} disabled={out.status === "writing"}>
                       {justCopied ? "已複製" : "只複製"}
                     </Button>

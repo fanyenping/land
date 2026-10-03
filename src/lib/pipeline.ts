@@ -1,4 +1,4 @@
-import type { AnalyzeRequest, DocKind, GenerateRequest, PatientContext, TranslateLang } from "../../shared/types";
+import type { AnalyzeRequest, DocKind, GenerateRequest, PatientContext, PreviousVisit, TranslateLang } from "../../shared/types";
 import { PipelineError, analyze, currentEngine, generate, probeEngine, transcribe, translate } from "./api";
 import { db, getBlob, getSettings, updateVisit } from "./db";
 import { ageOf } from "./format";
@@ -30,6 +30,19 @@ export function patientContext(p: Patient): PatientContext {
     diagnoses: p.diagnoses,
     tubes: p.tubes.map((t) => ({ name: t.name, nextDue: nextDue(t.changedAt, t.intervalDays) })),
   };
+}
+
+/** 這筆訪視要比較的「上次」：用第一次整理時的快照；個案的「上次」若就是這筆自己，不拿來比。 */
+function baselineFor(visit: Visit, patient: Patient): Patient["last"] {
+  if (visit.previous !== undefined) return visit.previous;
+  const last = patient.last;
+  if (!last) return null;
+  const isSelf = last.visitId ? last.visitId === visit.id : last.date === visit.date;
+  return isSelf ? null : last;
+}
+
+function toPrevious(last: Patient["last"]): PreviousVisit | null {
+  return last ? { date: last.date, summary: last.summary, vitals: last.vitals, findings: last.findings } : null;
 }
 
 export function nextDue(changedAt: string | null, intervalDays: number | null): string | null {
@@ -141,7 +154,7 @@ async function run(visitId: string) {
         documents,
         typedVitals: visit.typedVitals,
         notes: visit.notes,
-        previous: patient.last,
+        previous: toPrevious(baselineFor(visit, patient)),
         currentPlan: patient.plan?.text ?? null,
       };
       const res = await withRetry(() => analyze(req, local));
@@ -153,6 +166,7 @@ async function run(visitId: string) {
               analysisMeta: res.meta,
               vitals: initialVitals(res.analysis, v.typedVitals, v.typedQualifiers),
               identityConfirmed: !res.analysis.identityConcern,
+              previous: baselineFor(v, patient),
             },
       );
     }
@@ -235,7 +249,7 @@ async function writeDoc(visitId: string, kind: DocKind, opts: WriteOptions) {
       clinicPhone: settings.clinicPhone || null,
     },
     intakeOnly: visit.intakeOnly,
-    previous: patient.last,
+    previous: toPrevious(baselineFor(visit, patient)),
   };
 
   try {

@@ -36,7 +36,8 @@ export interface Patient {
   consent: RecordingConsent | null;
   consentRefusedAt: string | null;
   plan: { version: number; text: string; confirmedAt: string; by: string } | null;
-  last: { date: string; summary: string; vitals: { key: VitalKey; value: string; qualifier: string | null }[]; findings: string[] } | null;
+  /** 上一次完成的訪視（visitId：是哪一筆完成時寫入的）。 */
+  last: { date: string; summary: string; vitals: { key: VitalKey; value: string; qualifier: string | null }[]; findings: string[]; visitId?: string } | null;
   isDemo: boolean;
   isTemporary: boolean;
   createdAt: string;
@@ -165,6 +166,11 @@ export interface Visit {
   recordingEndedAt: string | null;
   /** 處理中又補了資料：這輪結束後重新整理。 */
   reprocessQueued?: { audio: boolean } | null;
+  /**
+   * 第一次整理時拿來比較的「上次訪視」快照。這筆完成後個案的「上次」會換成它自己，
+   * 之後重新產生仍要跟真正的上次比，不能跟自己比。
+   */
+  previous?: Patient["last"];
 }
 
 export interface Settings {

@@ -243,7 +243,14 @@ export async function importToPatient(patientId: string, files: File[]): Promise
   const reuse = (await db.visits.where("patientId").equals(patientId).toArray()).find((v) => v.date === today && v.status === "scheduled");
   const visit = reuse ?? newVisit(patientId, today, hhmm());
   if (!reuse) await db.visits.put(visit);
-  const result = await storeFiles(visit.id, files);
+  let result: StoreResult;
+  try {
+    result = await storeFiles(visit.id, files);
+  } catch (err) {
+    // 存檔失敗（例如空間不足）：剛建立的空訪視不要留在今日清單。
+    if (!reuse) await deleteVisitDeep(visit.id).catch(() => undefined);
+    throw err;
+  }
   if (result.audio + result.docs === 0) {
     if (!reuse) await db.visits.delete(visit.id);
     return { visitId: null, result };
@@ -312,7 +319,7 @@ export async function moveVisit(visitId: string, patientId: string) {
       const out = v.outputs[k];
       outputs[k] = { ...out, status: out.status === "confirmed" ? "edited" : out.status, planVersion: null, ...unconfirmed };
     }
-    return { patientId, identityConfirmed: true, outputs, status: v.status === "done" ? "review" : v.status, completedAt: null };
+    return { patientId, identityConfirmed: true, outputs, status: v.status === "done" ? "review" : v.status, completedAt: null, previous: undefined };
   });
   // 未動過的草稿依新個案重寫；改過或確認過的以「新版本可比較」提供。
   if (processed) void reprocessWithNewMaterial(visitId, false);
@@ -548,9 +555,10 @@ async function markConfirmed(visitId: string, kind: DocKind, extra: { copied?: b
   });
 
   const after = await db.visits.get(visitId);
-  if (after?.status === "done" && patient && after.analysis) {
+  // 個案的「上次」只往前推：補完較早的訪視時不蓋掉較新的。
+  if (after?.status === "done" && patient && after.analysis && (!patient.last || patient.last.visitId === after.id || patient.last.date <= after.date)) {
     await updatePatient(patient.id, {
-      last: { date: after.date, summary: after.analysis.summary, vitals: confirmedVitalList(after), findings: after.analysis.findings.slice(0, 4).map((f) => f.text) },
+      last: { date: after.date, summary: after.analysis.summary, vitals: confirmedVitalList(after), findings: after.analysis.findings.slice(0, 4).map((f) => f.text), visitId: after.id },
     });
   }
 }

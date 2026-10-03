@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
+import { useLocation } from "react-router";
 import { AlertTriangle, Check } from "lucide-react";
 
 interface ToastItem {
@@ -16,6 +17,8 @@ const Ctx = createContext<(text: string, opts?: ToastOptions) => void>(() => und
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([]);
+  // 錄音畫面沒有底部導覽，主要按鈕就在底部：提示改到上方，不要蓋住「完成訪視」。
+  const top = /^\/v\/[^/]+\/rec$/.test(useLocation().pathname);
   const seq = useRef(0);
 
   const show = useCallback((text: string, opts?: ToastOptions) => {
@@ -27,12 +30,20 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={show}>
       {children}
-      <div aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+104px)] z-[60] flex flex-col items-center gap-2 px-4 md:bottom-8">
+      <div
+        aria-live="polite"
+        className={
+          "pointer-events-none fixed inset-x-0 z-[60] flex flex-col items-center gap-2 px-4 " +
+          (top ? "top-[calc(env(safe-area-inset-top)+76px)]" : "bottom-[calc(env(safe-area-inset-bottom)+104px)] md:bottom-8")
+        }
+      >
         {items.map((t) => (
           <div
             key={t.id}
             className={
-              "pointer-events-auto flex max-w-[min(92vw,560px)] animate-pop items-center gap-3 rounded-full bg-ink py-2.5 pl-4 pr-2.5 text-paper shadow-soft " +
+              // 沒有「復原」等按鈕的提示不攔截點擊，底下的按鈕照樣按得到。
+              (t.action ? "pointer-events-auto " : "pointer-events-none ") +
+              "flex max-w-[min(92vw,560px)] animate-pop items-center gap-3 rounded-full bg-ink py-2.5 pl-4 pr-2.5 text-paper shadow-soft " +
               (t.big ? "text-[1.15rem]" : "text-[1rem]")
             }
           >
