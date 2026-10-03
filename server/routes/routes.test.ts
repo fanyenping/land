@@ -1,11 +1,12 @@
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import { DEMO_ASSESSMENT } from "../../shared/demoAssessment";
-import { DEMO_DURATION_MS, DEMO_SEGMENTS } from "../../shared/demoTranscript";
-import { EDU_CLOSING, PROMPT_VERSION, TRANSLATION_PREFIX } from "../../shared/templates";
-import type { AnalyzeRequest, AnalyzeResponse, GenerateResponse, TranslateResponse } from "../../shared/types";
+import { DEMO_DURATION_MS, DEMO_PLAN_DICTATION_TEXT, DEMO_SEGMENTS } from "../../shared/demoTranscript";
+import { EDU_CLOSING, PLAN_HEADINGS, PROMPT_VERSION, TRANSLATION_PREFIX } from "../../shared/templates";
+import type { AnalyzeRequest, AnalyzeResponse, GenerateResponse, PolishPlanRequest, PolishPlanResponse, TranslateResponse } from "../../shared/types";
 import { analyzeRoute } from "./analyze";
 import { generateRoute } from "./generate";
+import { polishPlanRoute } from "./polishPlan";
 import { translateRoute } from "./translate";
 
 // 沒有金鑰時走示範模式（測試環境不應有金鑰）
@@ -16,6 +17,7 @@ const app = new Hono();
 app.post("/api/analyze", analyzeRoute);
 app.post("/api/generate", generateRoute);
 app.post("/api/translate", translateRoute);
+app.post("/api/polish-plan", polishPlanRoute);
 
 const post = (path: string, body: unknown) =>
   app.request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -106,5 +108,35 @@ describe("AI 路由（示範模式）", () => {
     }
     const bad = await app.request("/api/translate", { method: "POST", headers: { "content-type": "application/json" }, body: "{" });
     expect(bad.status).toBe(400);
+  });
+});
+
+describe("POST /api/polish-plan（示範模式）", () => {
+  const body: PolishPlanRequest = {
+    visitDate: "2026-10-03",
+    dictation: DEMO_PLAN_DICTATION_TEXT,
+    familyCallsAs: null,
+    hasCurrentPlan: false,
+    options: { instructions: [], custom: null },
+  };
+
+  it("示範口述：五段＋依據行，沒有提醒", async () => {
+    const res = await post("/api/polish-plan", body);
+    expect(res.status).toBe(200);
+    const { doc, meta, warnings } = (await res.json()) as PolishPlanResponse;
+    expect(meta).toEqual({ mode: "demo", model: null, promptVersion: "plan-polish-1" });
+    expect(doc.sections.map((s) => s.heading)).toEqual(["", ...PLAN_HEADINGS]);
+    expect(doc.sections[0].body).toBe("依據：護理師口述（2026/10/03）");
+    expect(warnings ?? []).toEqual([]);
+  });
+
+  it("格式不符回 400 bad_request", async () => {
+    for (const bad of [{ ...body, dictation: "   " }, { ...body, hasCurrentPlan: "no" }, { visitDate: "2026-10-03" }]) {
+      const res = await post("/api/polish-plan", bad);
+      expect(res.status).toBe(400);
+      const { error } = (await res.json()) as { error: { code: string; message: string; retryable: boolean } };
+      expect(error).toMatchObject({ code: "bad_request", retryable: false });
+      expect(error.message).toMatch(/[一-鿿]/);
+    }
   });
 });

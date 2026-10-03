@@ -13,8 +13,10 @@ import { updatePatient } from "../lib/db";
 import { addDays, ageOf, daysUntil, shortDate, todayStr } from "../lib/format";
 import { usePatient, usePatientVisits } from "../lib/hooks";
 import { newId, type Patient, type Tube } from "../lib/model";
+import { PLAN_SOURCE_LABEL } from "../../shared/types";
 import { nextDue } from "../lib/pipeline";
 import { visitStatus } from "../lib/status";
+import { planBadge } from "../lib/planSlot";
 import { AssessmentCard } from "../assessment/AssessmentScreens";
 import { completedCount } from "../assessment/forms";
 
@@ -161,6 +163,7 @@ export function PatientDetail() {
             <>
               <p className="text-[0.95rem] text-ink-soft">
                 {shortDate(patient.plan.confirmedAt.slice(0, 10))} {patient.plan.by}確認
+                {patient.plan.source && `・${PLAN_SOURCE_LABEL[patient.plan.source]}`}
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <Button size="sm" onClick={() => setShowPlan(true)}>
@@ -235,12 +238,14 @@ export function PatientDetail() {
         <div className="flex flex-col gap-2">
           {sorted.map((v) => {
             const st = visitStatus(v);
+            const badge = planBadge(v);
             return (
               <Link key={v.id} to={`/v/${v.id}`} className="flex min-h-[64px] items-center gap-3 rounded-[22px] bg-card px-4 outline-ink">
                 <Critter kind={st.critter} size={34} animate={v.status === "processing"} />
                 <span className="num flex-1 font-extrabold">
                   {shortDate(v.date)} {v.time ?? ""}
                 </span>
+                {badge && <Pill tone="muted">{badge}</Pill>}
                 <Pill tone={st.tone}>{st.label}</Pill>
                 <ChevronRight size={18} className="text-ink-faint" />
               </Link>

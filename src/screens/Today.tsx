@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { CalendarPlus, ChevronRight, ClipboardList, FileUp, Info, Mic, MoreHorizontal, Trash2 } from "lucide-react";
+import { CalendarPlus, ChevronRight, ClipboardList, FileUp, Info, Mic, MoreHorizontal, Smartphone, Trash2 } from "lucide-react";
 import { useFlows } from "../app/Flows";
 import { ActionSheet } from "../components/ActionSheet";
 import { Critter } from "../components/Critter";
@@ -17,6 +17,7 @@ import { engineLabel } from "../lib/api";
 import { completedCount } from "../assessment/forms";
 import { TRIAL } from "../lib/env";
 import { seedDemo } from "../lib/seed";
+import { planBadge } from "../lib/planSlot";
 
 export function Today() {
   const now = useNow();
@@ -204,7 +205,7 @@ function VisitCard({ visit, patient, index }: { visit: Visit; patient: Patient; 
   switch (visit.status) {
     case "scheduled":
       primary = refused
-        ? { label: "口述（離開後）", icon: <Mic size={22} strokeWidth={2.6} />, run: () => flows.record(patient, "dictate") }
+        ? { label: "口述訪視（離開後）", icon: <Mic size={22} strokeWidth={2.6} />, run: () => flows.record(patient, "dictate") }
         : { label: "開始錄音", icon: <Mic size={22} strokeWidth={2.6} />, run: () => flows.record(patient) };
       break;
     case "recording":
@@ -291,6 +292,12 @@ function VisitCard({ visit, patient, index }: { visit: Visit; patient: Patient; 
           {primary.label}
         </Button>
       )}
+      {/* 用 iPhone 語音備忘錄錄好的訪視：存到「檔案」後直接選來整理。 */}
+      {(visit.status === "scheduled" || visit.status === "interrupted") && (
+        <Button variant="ghost" size="md" block className="mt-1.5" icon={<Smartphone size={20} />} onClick={() => flows.importVoiceMemo(patient)}>
+          iPhone 語音備忘錄
+        </Button>
+      )}
 
       <ActionSheet
         open={menu}
@@ -298,7 +305,8 @@ function VisitCard({ visit, patient, index }: { visit: Visit; patient: Patient; 
         title={<Name name={patient.name} />}
         items={[
           { label: "匯入文件或錄音檔", icon: <FileUp size={22} />, onSelect: () => flows.openNew(patient) },
-          ...(refused || visit.status !== "scheduled" ? [] : [{ label: "口述（不錄現場）", icon: <Mic size={22} />, onSelect: () => flows.record(patient, "dictate") }]),
+          { label: "iPhone 語音備忘錄", hint: "先在語音備忘錄「儲存到檔案」", icon: <Smartphone size={22} />, onSelect: () => flows.importVoiceMemo(patient) },
+          ...(refused || visit.status !== "scheduled" ? [] : [{ label: "口述訪視（不錄現場）", icon: <Mic size={22} />, onSelect: () => flows.record(patient, "dictate") }]),
           { label: "個案資訊", icon: <Info size={22} />, onSelect: () => navigate(`/patients/${patient.id}`) },
           { label: `全人評估（${completedCount(patient.assessment)}/13）`, icon: <ClipboardList size={22} />, onSelect: () => navigate(`/patients/${patient.id}/assessment`) },
           ...(canRemove
@@ -321,6 +329,7 @@ function VisitCard({ visit, patient, index }: { visit: Visit; patient: Patient; 
 }
 
 function DoneRow({ visit, patient }: { visit: Visit; patient: Patient }) {
+  const badge = planBadge(visit);
   return (
     <Link to={`/v/${visit.id}`} className="flex min-h-[64px] items-center gap-3 rounded-[22px] bg-card/70 px-4 py-2 opacity-90 outline-ink">
       <Critter kind="done" size={34} />
@@ -328,6 +337,7 @@ function DoneRow({ visit, patient }: { visit: Visit; patient: Patient }) {
       <span className="min-w-0 flex-1 truncate text-[1.1rem] font-extrabold">
         <Name name={patient.name} />
       </span>
+      {badge && <Pill tone="muted">{badge}</Pill>}
       <Pill tone="ok">已完成</Pill>
       <ChevronRight size={18} className="text-ink-faint" />
     </Link>

@@ -6,6 +6,7 @@ import { Critter } from "../components/Critter";
 import { Name } from "../components/Name";
 import { useToast } from "../components/Toast";
 import { VitalsSheet } from "../components/VitalsSheet";
+import { VoiceMemoGuideSheet } from "../components/VoiceMemoGuide";
 import { BottomNav, SideNav } from "../components/Nav";
 import { NotFound } from "./NotFound";
 import { Button, RoundButton, cx } from "../components/ui";
@@ -13,6 +14,7 @@ import { useFlows } from "../app/Flows";
 import { consentValid, deleteVisit, finishVisit, startRecording, storageErrorMessage, storeFiles, storeSummary } from "../lib/actions";
 import { duration } from "../lib/format";
 import { usePatient, useRecorder, useVisit } from "../lib/hooks";
+import { AUDIO_ACCEPT } from "../lib/audioFiles";
 import { TRIAL } from "../lib/env";
 import { TRIAL_NO_MIC, recorder } from "../lib/recorder";
 
@@ -31,6 +33,7 @@ export function Recording() {
   const [vitals, setVitals] = useState(false);
   const [dim, setDim] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [guide, setGuide] = useState(false);
   const camera = useRef<HTMLInputElement>(null);
   const audioPick = useRef<HTMLInputElement>(null);
   const idle = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -148,6 +151,7 @@ export function Recording() {
               <Button block icon={<Upload size={20} />} onClick={() => audioPick.current?.click()}>
                 選錄音檔
               </Button>
+              <MemoGuideLink onClick={() => setGuide(true)} />
             </div>
           ) : null}
 
@@ -210,6 +214,7 @@ export function Recording() {
               <Button variant={visit.parts.length ? "secondary" : "primary"} size={visit.parts.length ? "lg" : "xl"} block icon={<Upload size={22} />} onClick={() => audioPick.current?.click()}>
                 {visit.parts.length ? "再選一個錄音檔" : "選錄音檔"}
               </Button>
+              <MemoGuideLink onClick={() => setGuide(true)} />
             </div>
           ) : showStart ? (
             <div className="flex w-full flex-col gap-3">
@@ -262,7 +267,7 @@ export function Recording() {
         <input
           ref={audioPick}
           type="file"
-          accept="audio/*,.m4a,.mp3,.wav,.aac,.webm"
+          accept={AUDIO_ACCEPT}
           multiple
           hidden
           onChange={async (e) => {
@@ -279,13 +284,14 @@ export function Recording() {
         />
 
         <VitalsSheet visit={visit} open={vitals} onClose={() => setVitals(false)} />
+        <VoiceMemoGuideSheet open={guide} onClose={() => setGuide(false)} purpose="visit" onPick={() => audioPick.current?.click()} />
 
         <ActionSheet
           open={menu}
           onClose={() => setMenu(false)}
           title="錄音選項"
           items={[
-            { label: "加入錄音檔", icon: <Upload size={22} />, onSelect: () => audioPick.current?.click() },
+            { label: "加入錄音檔", hint: "含 iPhone 語音備忘錄", icon: <Upload size={22} />, onSelect: () => audioPick.current?.click() },
             {
               label: "改到其他個案",
               icon: <Shuffle size={22} />,
@@ -320,5 +326,13 @@ export function Recording() {
       </div>
       <BottomNav onPlus={onPlus} />
     </div>
+  );
+}
+
+function MemoGuideLink({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="mt-1 min-h-[44px] w-full rounded-full text-center text-[0.98rem] font-bold underline underline-offset-4">
+      iPhone 語音備忘錄怎麼選？
+    </button>
   );
 }

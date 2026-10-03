@@ -25,7 +25,13 @@ export function visitStatus(v: Visit): StatusInfo {
       return { label: v.stage ? `${STAGE_LABEL[v.stage]}中` : "處理中", tone: "edu", critter: "processing" };
     case "review": {
       const n = pendingCount(v);
-      return n > 0 ? { label: `待確認 ${n}`, tone: "pending", critter: "pending" } : { label: "可複製", tone: "plan", critter: "done" };
+      if (n > 0) return { label: `待確認 ${n}`, tone: "pending", critter: "pending" };
+      // 紀錄（與衛教）都確認了，只剩計畫草稿還沒確認。
+      const { record, plan, edu } = v.outputs;
+      if (record.status === "confirmed" && (!edu.versions.length || edu.status === "confirmed") && plan.versions.length > 0 && plan.status !== "confirmed" && !v.planDeferred) {
+        return { label: "計畫待確認", tone: "pending", critter: "pending" };
+      }
+      return { label: "可複製", tone: "plan", critter: "done" };
     }
     case "done":
       return { label: "已完成", tone: "ok", critter: "done" };

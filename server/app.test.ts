@@ -1,6 +1,6 @@
 import { HTTPException } from "hono/http-exception";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { DEMO_DURATION_MS, DEMO_SEGMENTS } from "../shared/demoTranscript";
+import { DEMO_DURATION_MS, DEMO_PLAN_DICTATION_TEXT, DEMO_SEGMENTS } from "../shared/demoTranscript";
 import type { AnalyzeRequest, HealthResponse } from "../shared/types";
 import { createApp } from "./app";
 import { MAX_DOCUMENT_BASE64_CHARS } from "./ai/schemas";
@@ -102,13 +102,19 @@ describe("跨站請求與 JSON 內容類型", () => {
   const { app } = createApp({ env: {} });
 
   it("JSON 路由不接受 text/plain、表單或沒有 Content-Type 的請求", async () => {
-    for (const path of ["/api/analyze", "/api/generate", "/api/translate"]) {
+    for (const path of ["/api/analyze", "/api/generate", "/api/translate", "/api/polish-plan"]) {
       for (const type of ["text/plain", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x", ""]) {
         const res = await app.request(path, { method: "POST", headers: type ? { "content-type": type } : {}, body: translateBody });
         await expectError(res, 415, "bad_content_type");
       }
     }
     expect((await app.request("/api/translate", json({ "content-type": "Application/JSON; charset=utf-8" }))).status).toBe(200);
+  });
+
+  it("口述計畫整理的請求上限 64 KB：太大回 413 too_large", async () => {
+    const big = JSON.stringify({ visitDate: "2026-10-03", dictation: "傷".repeat(30_000), familyCallsAs: null, hasCurrentPlan: false, options: { instructions: [], custom: null } });
+    const res = await app.request("/api/polish-plan", json({}, big));
+    await expectError(res, 413, "too_large");
   });
 
   it("瀏覽器標示為跨站的請求一律拒絕", async () => {
@@ -239,6 +245,29 @@ describe("/api/transcribe", () => {
       body: "--x--",
     });
     await expectError(res, 413, "too_large");
+  });
+
+  it("示範 STT：purpose=plan 回示範的護理計畫口述，沒有 purpose 回示範訪視逐字稿", async () => {
+    const { app } = createApp({ env: {} });
+    const upload = (purpose?: string) => {
+      const form = new FormData();
+      form.append("audio", new Blob([new Uint8Array(2048)], { type: "audio/x-m4a" }), "新錄音 3.m4a");
+      if (purpose) form.append("purpose", purpose);
+      return app.request("/api/transcribe", { method: "POST", body: form });
+    };
+    const plan = await upload("plan");
+    expect(plan.status).toBe(200);
+    const { transcript } = (await plan.json()) as { transcript: Transcript };
+    expect(transcript).toMatchObject({ text: DEMO_PLAN_DICTATION_TEXT, provider: "demo", durationMs: 72_000 });
+    expect(transcript.segments).toHaveLength(1);
+    expect(transcript.segments[0]).toMatchObject({ speaker: "S1", text: DEMO_PLAN_DICTATION_TEXT });
+
+    const visit = await upload();
+    expect(visit.status).toBe(200);
+    const v = ((await visit.json()) as { transcript: Transcript }).transcript;
+    expect(v.text).not.toBe(DEMO_PLAN_DICTATION_TEXT);
+    expect(v.segments).toHaveLength(DEMO_SEGMENTS.length);
+    expect(v.durationMs).toBe(DEMO_DURATION_MS);
   });
 
   it("壞掉的 multipart 回 400 bad_form", async () => {

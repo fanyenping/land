@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { ASSESSMENT_MAX_CHARS } from "../../shared/assessment";
 import { demoAnalysis } from "../../shared/demo";
 import { DEMO_ASSESSMENT } from "../../shared/demoAssessment";
-import type { GenerateRequest } from "../../shared/types";
-import { GenerateRequestSchema } from "./schemas";
+import type { GenerateRequest, PolishPlanRequest } from "../../shared/types";
+import { GenerateRequestSchema, PolishPlanRequestSchema } from "./schemas";
 
 const patient = { displayName: "陳○蘭", gender: "女" as const, age: 84, familyCallsAs: "阿嬤", diagnoses: [], tubes: [] };
 
@@ -50,5 +50,46 @@ describe("GenerateRequestSchema：初次／再次訪視與全人評估", () => {
       expect(r.success, field).toBe(false);
       expect(r.error?.issues[0].path[0]).toBe(field);
     }
+  });
+});
+
+describe("PolishPlanRequestSchema：口述計畫整理", () => {
+  const polish: PolishPlanRequest = {
+    visitDate: "2026-10-03",
+    dictation: "第一個問題是便秘，目標每三天解便一次。",
+    familyCallsAs: "阿嬤",
+    hasCurrentPlan: false,
+    options: { instructions: ["改成條列"], custom: null },
+  };
+
+  it("接受合格的請求（口述前後空白會去掉）", () => {
+    const r = PolishPlanRequestSchema.safeParse({ ...polish, dictation: `  ${polish.dictation}\n` });
+    expect(r.success).toBe(true);
+    expect(r.data).toEqual(polish);
+    expect(PolishPlanRequestSchema.safeParse({ ...polish, familyCallsAs: null, dictation: "x".repeat(6000) }).success).toBe(true);
+  });
+
+  it("拒絕空白口述、超過 6000 字、超過 5 條指示、過長的指示、非布林的 hasCurrentPlan", () => {
+    const bad: [string, unknown][] = [
+      ["dictation", { ...polish, dictation: "" }],
+      ["dictation", { ...polish, dictation: " \n\t　" }],
+      ["dictation", { ...polish, dictation: "x".repeat(6001) }],
+      ["options", { ...polish, options: { instructions: Array(6).fill("更精簡"), custom: null } }],
+      ["options", { ...polish, options: { instructions: ["x".repeat(201)], custom: null } }],
+      ["hasCurrentPlan", { ...polish, hasCurrentPlan: "true" }],
+      ["hasCurrentPlan", { ...polish, hasCurrentPlan: undefined }],
+    ];
+    for (const [field, body] of bad) {
+      const r = PolishPlanRequestSchema.safeParse(body);
+      expect(r.success, field).toBe(false);
+      expect(r.error?.issues[0].path[0]).toBe(field);
+    }
+  });
+
+  it("不認識的欄位（分析、評估、現行計畫）一律丟掉", () => {
+    const r = PolishPlanRequestSchema.safeParse({ ...polish, analysis: { summary: "x" }, assessment: "Braden 12分", currentPlan: "問題 1：便秘", kind: "plan" });
+    expect(r.success).toBe(true);
+    expect(r.data).toEqual(polish);
+    expect(Object.keys(r.data ?? {})).not.toContain("assessment");
   });
 });

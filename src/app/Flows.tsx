@@ -1,11 +1,12 @@
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router";
-import { Mic } from "lucide-react";
+import { Mic, Smartphone } from "lucide-react";
 import { Critter, type CritterKind } from "../components/Critter";
 import { Name } from "../components/Name";
 import { Sheet } from "../components/Sheet";
 import { useToast } from "../components/Toast";
 import { Button, cx } from "../components/ui";
+import { VoiceMemoGuideSheet } from "../components/VoiceMemoGuide";
 import {
   classifyFiles,
   consentValid,
@@ -18,6 +19,7 @@ import {
   storageErrorMessage,
   storeSummary,
 } from "../lib/actions";
+import { AUDIO_ACCEPT } from "../lib/audioFiles";
 import { TRIAL } from "../lib/env";
 import { bytes } from "../lib/format";
 import type { Patient } from "../lib/model";
@@ -33,6 +35,8 @@ interface Flows {
   recordForSomeone: () => void;
   /** 匯入檔案：指定個案則直接處理，否則先選個案。 */
   importFiles: (files: File[], patient?: Patient) => void;
+  /** iPhone 語音備忘錄：先看「儲存到檔案」的說明，再選錄音檔。 */
+  importVoiceMemo: (patient?: Patient) => void;
   /** 開找個案面板。 */
   findPatient: (title: string, onPick: (p: Patient) => void, excludeId?: string) => void;
   /** 新增或編輯個案。 */
@@ -54,8 +58,25 @@ type FileKind = "photo" | "pdf" | "audio";
 const PICKERS: { kind: FileKind; label: string; critter: CritterKind; accept: string; capture?: boolean }[] = [
   { kind: "photo", label: "拍文件", critter: "photo", accept: "image/*", capture: true },
   { kind: "pdf", label: "選 PDF 檔", critter: "pdf", accept: "application/pdf,.pdf" },
-  { kind: "audio", label: "選錄音檔", critter: "audio", accept: "audio/*,.m4a,.mp3,.wav,.aac,.webm,.ogg" },
+  { kind: "audio", label: "選錄音檔", critter: "audio", accept: AUDIO_ACCEPT },
 ];
+
+// 用過一次語音備忘錄後，新紀錄的方格直接開選檔（說明連結仍在）。
+const MEMO_GUIDE_KEY = "taione.memoGuide.v1";
+function memoGuideSeen() {
+  try {
+    return localStorage.getItem(MEMO_GUIDE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+function markMemoGuideSeen() {
+  try {
+    localStorage.setItem(MEMO_GUIDE_KEY, "1");
+  } catch {
+    // 私密瀏覽等不能存：下次再看一次說明。
+  }
+}
 
 export function FlowsProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
@@ -67,8 +88,11 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
   const [form, setForm] = useState<{ initial: Patient | null; onSaved?: (p: Patient) => void } | null>(null);
   const [assign, setAssign] = useState<File[] | null>(null);
   const [consent, setConsent] = useState<{ patient: Patient; mode: "visit" | "dictate" } | null>(null);
+  const [guide, setGuide] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const pickTarget = useRef<Patient | null>(null);
+  // 這次選檔是從語音備忘錄說明來的：真的選到檔案才記住「看過說明」。
+  const memoPick = useRef(false);
 
   const go = useCallback(
     async (patient: Patient, mode: "visit" | "dictate") => {
@@ -132,9 +156,16 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
     setNewOpen(true);
   }, []);
 
+  // 從選單進來一律先看說明（方格用過一次後才直接選檔）。
+  const importVoiceMemo = useCallback((patient?: Patient) => {
+    setNewPatient(patient ?? null);
+    setGuide(true);
+  }, []);
+
   const pickFiles = (accept: string, capture?: boolean) => {
     const input = fileInput.current;
     if (!input) return;
+    memoPick.current = false;
     input.accept = accept;
     if (capture) input.setAttribute("capture", "environment");
     else input.removeAttribute("capture");
@@ -160,7 +191,7 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
     [findPatient, toast],
   );
 
-  const value: Flows = { openNew, record, recordForSomeone, importFiles, findPatient, editPatient, moveTo };
+  const value: Flows = { openNew, record, recordForSomeone, importFiles, importVoiceMemo, findPatient, editPatient, moveTo };
 
   return (
     <Ctx.Provider value={value}>
@@ -174,6 +205,7 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
         onChange={(e) => {
           const files = Array.from(e.target.files ?? []);
           setNewOpen(false);
+          if (memoPick.current && files.length) markMemoGuideSeen();
           importFiles(files, pickTarget.current ?? undefined);
         }}
       />
@@ -208,8 +240,6 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
                 p.kind === "photo" && "bg-edu",
                 p.kind === "pdf" && "bg-pdf",
                 p.kind === "audio" && "bg-pending",
-                // 從個案頁打開時沒有「新增個案」方格：「選錄音檔」佔滿一排，不要單獨吊在左下。
-                p.kind === "audio" && newPatient && "col-span-2 min-h-[96px]",
               )}
             >
               {p.kind === "pdf" ? (
@@ -222,6 +252,20 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
               <span className="text-[1.12rem] font-extrabold">{p.label}</span>
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => {
+              setNewOpen(false);
+              if (memoGuideSeen()) pickFiles(AUDIO_ACCEPT);
+              else setGuide(true);
+            }}
+            className="sticker flex min-h-[120px] flex-col items-start justify-between gap-2 rounded-[26px] bg-audio p-4 text-left text-[#141414]"
+          >
+            <span className="grid h-[46px] w-[46px] place-items-center rounded-full bg-[#141414] text-white">
+              <Smartphone size={24} strokeWidth={2.4} />
+            </span>
+            <span className="text-[1.12rem] font-extrabold">iPhone 語音備忘錄</span>
+          </button>
           {!newPatient && (
             <button
               type="button"
@@ -229,14 +273,33 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
                 setNewOpen(false);
                 editPatient(null, (p) => navigate(`/patients/${p.id}`));
               }}
-              className="sticker flex min-h-[120px] flex-col items-start justify-between gap-2 rounded-[26px] bg-card p-4 text-left"
+              className="sticker col-span-2 flex min-h-[88px] items-center gap-4 rounded-[26px] bg-card px-5 text-left"
             >
               <Critter kind="nurse" size={46} />
               <span className="text-[1.12rem] font-extrabold">新增個案</span>
             </button>
           )}
         </div>
+        <button
+          type="button"
+          onClick={() => {
+            setNewOpen(false);
+            setGuide(true);
+          }}
+          className="mb-1 mt-2 min-h-[44px] w-full rounded-full text-center text-[0.98rem] font-bold text-ink-soft underline underline-offset-4"
+        >
+          iPhone 語音備忘錄怎麼選？
+        </button>
       </Sheet>
+
+      <VoiceMemoGuideSheet
+        open={guide}
+        onClose={() => setGuide(false)}
+        onPick={() => {
+          pickFiles(AUDIO_ACCEPT);
+          memoPick.current = true;
+        }}
+      />
 
       <FindPatientSheet
         open={!!find}

@@ -1,20 +1,20 @@
 import { useState } from "react";
-import { Link } from "react-router";
-import { AlertTriangle, Check, Copy, History, Languages, MoreHorizontal, Pencil, RefreshCw, Send, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Ban, Check, ClipboardList, Copy, History, Languages, Mic, MoreHorizontal, Pencil, PenLine, RefreshCw, Send, ShieldCheck } from "lucide-react";
 import { LANG_LABEL, type DocKind, type TranslateLang } from "../../shared/types";
 import { ActionSheet } from "../components/ActionSheet";
 import { Critter, type CritterKind } from "../components/Critter";
 import { useToast } from "../components/Toast";
 import { Button, Pill, RoundButton, Segmented, Spinner, cx } from "../components/ui";
-import { ackWarnings, blockersFor, confirmAndCopy, confirmOnly, decideSuggestion, hasOpenWarnings, markEduCopied, markEduShared, resolveCandidate, type Blocker } from "../lib/actions";
+import { ackWarnings, blockersFor, confirmAndCopy, confirmOnly, decideSuggestion, deferPlan, hasOpenWarnings, markEduCopied, markEduShared, resolveCandidate, type Blocker } from "../lib/actions";
 import { charCount, docBody, docHeader, docTitle, eduShareText, shareToLine, writeClipboard } from "../lib/compose";
 import { TRIAL } from "../lib/env";
 import { clock } from "../lib/format";
 import { useSettings } from "../lib/hooks";
 import type { Patient, Visit } from "../lib/model";
-import { regenerate, translateEdu } from "../lib/pipeline";
-import { completedCount } from "../assessment/forms";
+import { draftPlanFrom, translateEdu } from "../lib/pipeline";
+import { hasUnverified, planAutoWritable, planSlot } from "../lib/planSlot";
 import { EditSheet, RegenerateSheet, VersionsSheet } from "./DocSheets";
+import { DictationSheet, PlanDictationSource, PlanPanel, PlanSourcePill, editPlanDictation, planStatusLabel } from "./PlanPanel";
 
 const STYLE: Record<DocKind, { bg: string; tint: string; critter: CritterKind }> = {
   record: { bg: "bg-record", tint: "bg-record-tint", critter: "record" },
@@ -48,18 +48,27 @@ export function OutputCard({
   const [picked, setLang] = useState<TranslateLang | null>(null);
   const lang = picked ?? settings.translateLang;
   const [showTr, setShowTr] = useState(false);
+  const [dictate, setDictate] = useState(false);
+  const [srcOpen, setSrcOpen] = useState(false);
 
   const has = out.versions.length > 0;
-  const writing = out.status === "writing" || (out.status === "idle" && visit.status === "processing");
+  const isPlan = kind === "plan";
+  // 計畫只有依全人評估／沿用時才會自動撰寫（待口述、口述、本次不擬不寫）。
+  const planAuto = isPlan && planAutoWritable(visit, patient);
+  const writing = out.status === "writing" || (out.status === "idle" && visit.status === "processing" && (!isPlan || planAuto));
   const warnings = out.versions[out.current]?.warnings ?? [];
   const warningsOpen = hasOpenWarnings(out);
   const body = has ? docBody(kind, visit, settings) : "";
   const chars = charCount(body);
   const confirmed = out.status === "confirmed";
-  const pendingSuggestions = kind === "plan" ? (visit.analysis?.planSuggestions ?? []).filter((s) => !visit.suggestions[s.id]) : [];
-  const changesOpen = kind === "plan" && (visit.analysis?.changes ?? []).some((c) => !visit.dismissedChanges.includes(c.id)) && !visit.changesConfirmed;
+  const pendingSuggestions = planAuto ? (visit.analysis?.planSuggestions ?? []).filter((s) => !visit.suggestions[s.id]) : [];
+  // 口述的計畫只用護理師的口述，不受評估異動影響。
+  const changesOpen = isPlan && visit.planSource !== "dictation" && (visit.analysis?.changes ?? []).some((c) => !visit.dismissedChanges.includes(c.id)) && !visit.changesConfirmed;
+  const slot = isPlan ? planSlot(visit, patient) : null;
+  const planSrc = visit.planSource ?? slot?.mode;
+  const dictSrc = isPlan && visit.planSource === "dictation";
 
-  const statusLabel = writing
+  const docLabel = writing
     ? "撰寫中"
     : out.status === "failed"
       ? "沒有產生成功"
@@ -68,6 +77,7 @@ export function OutputCard({
         : out.status === "edited"
           ? "已修改"
           : "AI 草稿";
+  const statusLabel = (isPlan ? planStatusLabel(visit, patient) : null) ?? docLabel;
 
   const flash = () => {
     setJustCopied(true);
@@ -111,7 +121,7 @@ export function OutputCard({
         <div className="min-w-0 flex-1">
           <h2 className="font-round text-[1.35rem] font-extrabold leading-tight">
             {title}
-            {kind === "record" && visit.kind === "first" && <span className="ml-1.5 text-[0.95rem]">本次病摘</span>}
+            {kind === "record" && !visit.intakeOnly && <span className="ml-1.5 text-[0.95rem]">本次病摘</span>}
           </h2>
           <p className="text-[0.92rem] font-bold leading-snug">
             {statusLabel}
@@ -150,7 +160,7 @@ export function OutputCard({
           </div>
         )}
 
-        {kind === "plan" && visit.kind === "first" && has && <AssessmentBanner visit={visit} patient={patient} createdAt={out.versions[out.current]?.createdAt ?? ""} />}
+        {isPlan && <PlanPanel visit={visit} patient={patient} />}
 
         {pendingSuggestions.map((s) => (
           <div key={s.id} className="mb-3 rounded-2xl bg-pending-tint p-3">
@@ -178,7 +188,7 @@ export function OutputCard({
           </div>
         )}
 
-        {out.status === "failed" && !has && (
+        {out.status === "failed" && !has && (!isPlan || planAuto) && (
           <div className="flex flex-col gap-3 py-2">
             <p className="flex items-center gap-2 font-bold text-danger">
               <Critter kind="error" size={30} />
@@ -187,6 +197,11 @@ export function OutputCard({
             <Button onClick={() => setRegen(true)} icon={<RefreshCw size={18} />}>
               重試這份
             </Button>
+            {isPlan && (
+              <Button onClick={() => setDictate(true)} icon={<Mic size={18} />}>
+                改用口述
+              </Button>
+            )}
           </div>
         )}
 
@@ -217,6 +232,9 @@ export function OutputCard({
                 </div>
               </div>
             )}
+            {isPlan && hasUnverified(out) && (
+              <p className="mb-3 rounded-2xl bg-pending-tint p-3 font-bold leading-snug">有〔待核對〕：口述沒有說過的數字或用詞，請按「修改」刪除或改正後再確認</p>
+            )}
             {out.error && (
               <p className="mb-2 text-[0.95rem] font-bold text-danger">
                 新版本沒有產生成功：{out.error.message}
@@ -225,6 +243,7 @@ export function OutputCard({
             <p className="mb-2 flex flex-wrap items-center gap-2 text-[0.9rem] font-bold text-ink-soft">
               {demo && <Pill tone="pending">示範資料</Pill>}
               {docHeader(kind, visit, patient, settings)}
+              {isPlan && <PlanSourcePill visit={visit} patient={patient} />}
             </p>
             <div className="whitespace-pre-line text-[1.08rem] leading-[1.75]">
               {body.split("\n\n").map((block, i) => {
@@ -245,6 +264,7 @@ export function OutputCard({
                 );
               })}
             </div>
+            {isPlan && <PlanDictationSource visit={visit} open={srcOpen} onToggle={setSrcOpen} />}
 
             <div className="mt-2 flex flex-col gap-2.5">
               {kind === "edu" ? (
@@ -344,7 +364,29 @@ export function OutputCard({
         onClose={() => setMenu(false)}
         title={title}
         items={[
-          { label: "重新產生", icon: <RefreshCw size={21} />, hint: "更精簡、更詳細、改條列…", onSelect: () => setRegen(true) },
+          dictSrc
+            ? { label: "重新整理口述", icon: <RefreshCw size={21} />, hint: "只調整格式與語氣", onSelect: () => setRegen(true) }
+            : { label: "重新產生", icon: <RefreshCw size={21} />, hint: "更精簡、更詳細、改條列…", onSelect: () => setRegen(true) },
+          ...(dictSrc
+            ? [
+                { label: "修改口述原文", icon: <PenLine size={21} />, onSelect: () => void editPlanDictation(visit, () => setSrcOpen(true)) },
+                { label: "重新口述", icon: <Mic size={21} />, onSelect: () => setDictate(true) },
+              ]
+            : isPlan
+              ? [{ label: "改用口述", icon: <Mic size={21} />, hint: "AI 只整理語句，不新增內容", onSelect: () => setDictate(true) }]
+              : []),
+          ...(isPlan && slot && slot.done >= slot.total && planSrc !== "assessment" && visit.analysis
+            ? [
+                {
+                  label: "依全人評估擬定",
+                  icon: <ClipboardList size={21} />,
+                  onSelect: () => {
+                    toast("正在依全人評估擬定");
+                    void draftPlanFrom(visit.id, "assessment");
+                  },
+                },
+              ]
+            : []),
           { label: `版本紀錄（${out.versions.length}）`, icon: <History size={21} />, onSelect: () => setVersions("list") },
           ...(!confirmed && out.status !== "writing"
             ? [
@@ -359,10 +401,24 @@ export function OutputCard({
                 },
               ]
             : []),
+          ...(isPlan && !confirmed && !visit.planDeferred
+            ? [
+                {
+                  label: "本次不擬計畫",
+                  icon: <Ban size={21} />,
+                  hint: "紀錄照常完成，計畫維持現行版本",
+                  onSelect: async () => {
+                    await deferPlan(visit.id);
+                    toast("本次不擬計畫，紀錄照常完成");
+                  },
+                },
+              ]
+            : []),
         ]}
       />
       <EditSheet open={edit} onClose={() => setEdit(false)} visit={visit} kind={kind} title={title} />
       <RegenerateSheet open={regen} onClose={() => setRegen(false)} visit={visit} kind={kind} title={title} />
+      {isPlan && <DictationSheet open={dictate} onClose={() => setDictate(false)} visit={visit} patient={patient} />}
       <VersionsSheet
         mode={versions}
         onClose={() => setVersions(null)}
@@ -376,28 +432,5 @@ export function OutputCard({
         }}
       />
     </article>
-  );
-}
-
-/** 初次訪視的計畫依全人評估擬定：還沒填完或評估有更新時提示。 */
-function AssessmentBanner({ visit, patient, createdAt }: { visit: Visit; patient: Patient; createdAt: string }) {
-  const n = completedCount(patient.assessment);
-  const updated = patient.assessment?.updatedAt ?? "";
-  if (n < 13) {
-    return (
-      <Link to={`/patients/${patient.id}/assessment`} className="mb-3 flex min-h-[52px] items-center gap-2 rounded-2xl bg-pdf-tint px-3 font-bold">
-        <span className="flex-1">全人評估 {n}/13：填完後依評估擬定計畫</span>
-        <span className="underline underline-offset-4">去填寫</span>
-      </Link>
-    );
-  }
-  if (updated <= createdAt) return null;
-  return (
-    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-2xl bg-pdf-tint p-3 font-bold">
-      <span className="flex-1">全人評估有更新</span>
-      <Button size="sm" variant="primary" onClick={() => regenerate(visit.id, "plan", [], null, "依全人評估重新擬定")}>
-        依評估重新擬定
-      </Button>
-    </div>
   );
 }

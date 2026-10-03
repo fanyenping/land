@@ -7,6 +7,7 @@
  */
 import * as z from "zod/v4";
 import { ASSESSMENT_MAX_CHARS } from "../../shared/assessment";
+import { PLAN_DICTATION_MAX_CHARS } from "../../shared/planPolish";
 
 /* ------------------------------ 共用 ------------------------------ */
 
@@ -145,6 +146,21 @@ export const GenerateRequestSchema = z.object({
   /** 沒有時視為再次訪視（舊版前端不會送）。 */
   visitKind: z.enum(["first", "follow"]).optional(),
   assessment: z.string().max(ASSESSMENT_MAX_CHARS).nullable().optional(),
+});
+
+/**
+ * 口述計畫整理：只收口述文字與格式選項。一般的 z.object 會丟掉不認識的欄位（analysis、assessment、currentPlan…），
+ * 這就是「AI 只看得到口述」的保證。
+ */
+export const PolishPlanRequestSchema = z.object({
+  visitDate: z.string().min(1).max(20),
+  dictation: z.string().trim().min(1).max(PLAN_DICTATION_MAX_CHARS),
+  familyCallsAs: z.string().max(20).nullable(),
+  hasCurrentPlan: z.boolean(),
+  options: z.object({
+    instructions: z.array(z.string().max(200)).max(5),
+    custom: z.string().max(500).nullable(),
+  }),
 });
 
 export const TranslateRequestSchema = z.object({

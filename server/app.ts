@@ -7,6 +7,7 @@ import type { HealthResponse } from "../shared/types";
 import { llmStatus } from "./ai/client";
 import { analyzeRoute } from "./routes/analyze";
 import { generateRoute } from "./routes/generate";
+import { polishPlanRoute } from "./routes/polishPlan";
 import { transcribeRoute } from "./routes/transcribe";
 import { translateRoute } from "./routes/translate";
 import {
@@ -98,6 +99,8 @@ export function createApp(opts: AppOptions = {}) {
   const docsTooLarge = tooLarge("上傳的內容太大，請減少文件頁數或分次上傳。");
   app.post("/api/analyze", requireJson, ai, bodyLimit({ maxSize: 40 * 1024 * 1024, onError: docsTooLarge }), analyzeRoute);
   app.post("/api/generate", requireJson, ai, bodyLimit({ maxSize: 2 * 1024 * 1024, onError: docsTooLarge }), generateRoute);
+  // 護理計畫口述整理：只收口述文字（與撰寫共用 AI 限流額度）
+  app.post("/api/polish-plan", requireJson, ai, bodyLimit({ maxSize: 64 * 1024, onError: tooLarge("口述內容太長，請分段整理。") }), polishPlanRoute);
   app.post(
     "/api/translate",
     requireJson,

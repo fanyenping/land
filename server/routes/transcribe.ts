@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import { demoPlanTranscript } from "../../shared/demoTranscript";
 import { STT_NOT_CONFIGURED, SttError, isSttConfigured, transcribeSegments, type AudioInput, type SttProvider } from "../stt";
 
 const AUDIO_TYPES = /^(audio\/|video\/webm|video\/mp4|application\/octet-stream)/;
@@ -29,6 +30,8 @@ export function transcribeRoute(stt: SttProvider) {
     if (bad) {
       return c.json({ error: { code: "bad_type", message: `「${bad.name}」不是可辨識的音檔格式。`, retryable: false } }, 415);
     }
+    // 護理計畫口述（purpose=plan）：示範 STT 回示範口述；真正的 STT 不看 purpose
+    if (form.get("purpose") === "plan" && stt.name === "demo") return c.json({ transcript: demoPlanTranscript() });
 
     const parts: AudioInput[] = await Promise.all(
       files.map(async (f) => ({

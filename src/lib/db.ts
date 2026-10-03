@@ -101,14 +101,15 @@ export async function deletePatientDeep(id: string) {
   });
 }
 
-/** 依保存天數清除已完成訪視的錄音與文件（紀錄文字保留，供歷次查詢）。 */
+/** 依保存天數清除已完成訪視的錄音、文件與口述計畫的錄音（紀錄文字與口述原文保留，供歷次查詢）。 */
 export async function applyRetention(days: number) {
   const cutoff = Date.now() - days * 86_400_000;
   const old = await db.visits.filter((v) => v.status === "done" && !!v.completedAt && Date.parse(v.completedAt) < cutoff).toArray();
   for (const v of old) {
-    if (v.parts.length === 0 && v.documents.length === 0) continue;
+    const dict = v.planDictation;
+    if (v.parts.length === 0 && v.documents.length === 0 && !dict?.audio) continue;
     await db.blobs.where("visitId").equals(v.id).delete();
-    await db.visits.update(v.id, { parts: [], documents: [] });
+    await db.visits.update(v.id, { parts: [], documents: [], ...(dict?.audio ? { planDictation: { ...dict, audio: null } } : {}) });
   }
   return old.length;
 }

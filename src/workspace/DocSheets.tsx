@@ -84,6 +84,8 @@ function EditBody({ visit, kind, title, onDone }: { visit: Visit; kind: DocKind;
 }
 
 const QUICK = ["更精簡", "更詳細", "家屬更好懂", "改成條列", "加強管路照護"];
+/** 口述的計畫只調整格式與語氣。 */
+const QUICK_DICTATION = ["改成條列", "更精簡"];
 
 /** H8 重新產生：快速指示可複選；已修改或已確認的不會被覆寫，新版本放旁邊比較。 */
 export function RegenerateSheet({ open, onClose, visit, kind, title }: { open: boolean; onClose: () => void; visit: Visit; kind: DocKind; title: string }) {
@@ -92,17 +94,21 @@ export function RegenerateSheet({ open, onClose, visit, kind, title }: { open: b
   const [custom, setCustom] = useState("");
   const out = visit.outputs[kind];
   const keeps = out.status === "edited" || out.status === "confirmed";
+  // 護理師口述的計畫：只重新整理口述原文（AI 不新增內容）。
+  const dictation = kind === "plan" && visit.planSource === "dictation";
+  const quick = dictation ? QUICK_DICTATION : QUICK.filter((q) => kind === "edu" || q !== "家屬更好懂");
   return (
-    <Sheet open={open} onClose={onClose} title={`重新產生${title}`}>
+    <Sheet open={open} onClose={onClose} title={dictation ? "重新整理口述計畫" : `重新產生${title}`}>
       <div className="flex flex-col gap-4 pb-2">
         <div className="flex flex-wrap gap-2">
-          {QUICK.filter((q) => kind === "edu" || q !== "家屬更好懂").map((q) => (
+          {quick.map((q) => (
             <Chip key={q} active={picked.includes(q)} onClick={() => setPicked((p) => (p.includes(q) ? p.filter((x) => x !== q) : [...p, q]))}>
               {q}
             </Chip>
           ))}
         </div>
-        <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="其他要求（選填）" maxLength={500} className={inputClass} />
+        <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder={dictation ? "其他要求（只調整格式與語氣）" : "其他要求（選填）"} maxLength={500} className={inputClass} />
+        {dictation && <p className="rounded-2xl bg-plan-tint p-3 font-bold">AI 仍只用口述原文，不會新增內容</p>}
         {keeps && <p className="rounded-2xl bg-pending-tint p-3 font-bold">目前版本會保留，可比較後再選</p>}
         <Button
           variant="primary"
@@ -110,21 +116,24 @@ export function RegenerateSheet({ open, onClose, visit, kind, title }: { open: b
           block
           onClick={() => {
             onClose();
-            toast(`正在重新產生${title}`);
-            void regenerate(visit.id, kind, picked, custom.trim() || null);
+            toast(dictation ? `正在重新整理${title}` : `正在重新產生${title}`);
+            void regenerate(visit.id, kind, picked.filter((q) => quick.includes(q)), custom.trim() || null);
             setPicked([]);
             setCustom("");
           }}
         >
-          產生新版本
+          {dictation ? "重新整理" : "產生新版本"}
         </Button>
       </div>
     </Sheet>
   );
 }
 
-function originLabel(v: OutputVersion) {
-  return v.origin === "nurse" ? "你修改" : v.origin === "regen" ? "AI 重新產生" : "AI 草稿";
+/** 計畫的版本依來源標示（口述整理、依全人評估、沿用＋評值）。 */
+function originLabel(v: OutputVersion, kind: DocKind) {
+  if (v.origin === "nurse") return "你修改";
+  if (kind === "plan" && v.source) return v.source === "dictation" ? "口述整理" : v.source === "assessment" ? "依全人評估" : "沿用＋評值";
+  return v.origin === "regen" ? "AI 重新產生" : "AI 草稿";
 }
 
 /** H9 版本：只增不刪；「用這版」會建立新版本。 */
@@ -178,11 +187,11 @@ export function VersionsSheet({
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           <div className={view === "current" ? "" : "hidden md:block"}>
-            <p className="mb-1 font-extrabold">目前・{originLabel(cur)}</p>
+            <p className="mb-1 font-extrabold">目前・{originLabel(cur, kind)}</p>
             <p className="whitespace-pre-line rounded-2xl bg-card p-3 leading-relaxed outline-ink">{text(cur)}</p>
           </div>
           <div className={view === "candidate" ? "" : "hidden md:block"}>
-            <p className="mb-1 font-extrabold">新版本・{cand.note ?? originLabel(cand)}</p>
+            <p className="mb-1 font-extrabold">新版本・{cand.note ?? originLabel(cand, kind)}</p>
             <p className="whitespace-pre-line rounded-2xl bg-pending-tint p-3 leading-relaxed outline-ink">{text(cand)}</p>
           </div>
         </div>
@@ -201,7 +210,7 @@ export function VersionsSheet({
               <span className="num grid h-11 w-11 shrink-0 place-items-center rounded-full bg-ink/[0.07] font-extrabold">v{i + 1}</span>
               <span className="min-w-0 flex-1">
                 <span className="block font-extrabold">
-                  {originLabel(v)}・{clock(v.createdAt)}
+                  {originLabel(v, kind)}・{clock(v.createdAt)}
                 </span>
                 <span className="block truncate text-[0.88rem] text-ink-soft">{v.note ?? (v.meta?.mode === "demo" ? "示範引擎" : (v.meta?.model ?? ""))}</span>
               </span>

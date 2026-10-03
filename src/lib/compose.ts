@@ -36,6 +36,9 @@ export function docHeader(kind: DocKind, visit: Visit, patient: Patient | undefi
   const date = fullDate(visit.date);
   if (kind === "plan") {
     const n = planVersionFor(visit, patient);
+    const out = visit.outputs.plan;
+    // 護理師口述整理的計畫：標示來源，不寫「沿用」。
+    if (out.versions[out.current]?.source === "dictation") return `【護理計畫】第 ${n} 版　${visit.date.replaceAll("-", "/")} ${n > 1 ? "更新" : "擬定"}（護理師口述）`;
     return n > 1 ? `【護理計畫】第 ${n} 版　${visit.date.replaceAll("-", "/")} 更新（沿用第 ${n - 1} 版）` : `【護理計畫】第 1 版　${visit.date.replaceAll("-", "/")} 擬定`;
   }
   if (kind === "edu") return `【給家屬的照顧小叮嚀】${visit.date.replaceAll("-", "/")}`;

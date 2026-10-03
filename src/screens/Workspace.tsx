@@ -12,11 +12,13 @@ import { VitalsSheet } from "../components/VitalsSheet";
 import { Button, Pill, RoundButton, cx } from "../components/ui";
 import { ackWarnings, addMaterial, blockersFor, confirmAll, confirmAndCopy, deleteVisit, setVisitKind, storageErrorMessage, storeSummary, type Blocker } from "../lib/actions";
 import { isDemoEngine } from "../lib/api";
+import { AUDIO_ACCEPT } from "../lib/audioFiles";
 import { docTitle } from "../lib/compose";
 import { ageOf, clock, shortDate } from "../lib/format";
 import { useEngine, useMedia, usePatient, useSettings, useVisit } from "../lib/hooks";
 import type { Patient, Visit } from "../lib/model";
 import { nextDue } from "../lib/pipeline";
+import { includedKinds, planBadge, planExcludedReason } from "../lib/planSlot";
 import { visitStatus } from "../lib/status";
 import { AssessmentCard } from "../assessment/AssessmentScreens";
 import { completedCount } from "../assessment/forms";
@@ -81,8 +83,11 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
   const processing = (visit.status === "processing" || visit.status === "waiting" || visit.status === "failed") && !reviewing;
   const demo = visit.analysisMeta?.mode === "demo" || (isDemoEngine(engine) && !visit.analysisMeta);
   const age = ageOf(patient.birthYear);
-  const available = KINDS.filter((k) => visit.outputs[k].versions.length > 0);
+  // 全部複製只含可以一起複製的幾份：計畫沒準備好就不含，紀錄不等計畫。
+  const available = includedKinds(visit);
   const allConfirmed = available.length > 0 && available.every((k) => visit.outputs[k].status === "confirmed");
+  const planReason = planExcludedReason(visit, patient);
+  const badge = planBadge(visit);
 
   const onBlocked = useCallback((kind: DocKind | "all", blockers: Blocker[]) => setBlocked({ kind, blockers }), []);
 
@@ -91,13 +96,13 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
     if (res.blockers.length) return onBlocked("all", res.blockers);
     if (!res.ok) return toast("無法寫入剪貼簿，請長按文字自行複製", { error: true });
     navigator.vibrate?.(40);
-    toast(`已確認並複製 ${res.kinds.length} 份`, { big: true });
+    toast(res.planLeftOut ? `已確認並複製 ${res.kinds.length} 份（不含護理計畫）` : `已確認並複製 ${res.kinds.length} 份`, { big: true });
   }, [visit, patient, onBlocked, toast, settings]);
 
   /** 電腦版依序複製（C）：每次都寫出個案名，避免貼錯人。 */
   const copyNext = useCallback(async () => {
     const next = available.find((k) => !visit.outputs[k].copiedAt && !(k === "edu" && visit.outputs.edu.sharedAt));
-    if (!next) return toast("這位三份都複製過了");
+    if (!next) return toast("都複製過了");
     const res = await confirmAndCopy(visit, next, patient, settings);
     if (res.blockers.length) return onBlocked(next, res.blockers);
     if (!res.ok) return toast("無法寫入剪貼簿，請長按文字自行複製", { error: true });
@@ -210,6 +215,17 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
           導出
         </button>
       </div>
+      {planReason && (
+        <p className="mt-1 text-center">
+          {/* 電腦版按鈕列沒有底色：說明自帶底色，不疊在下面的文字上。 */}
+          <span className="inline-flex flex-wrap items-center justify-center gap-x-2 rounded-full bg-paper/90 px-3 text-[0.9rem] font-bold text-ink-soft backdrop-blur-md">
+            {planReason}・這次不含
+            <button type="button" onClick={() => jump("sec-plan")} className="min-h-[36px] font-extrabold text-ink underline underline-offset-4">
+              前往計畫
+            </button>
+          </span>
+        </p>
+      )}
     </div>
   );
 
@@ -282,6 +298,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
           <div id="sec-check" className="mb-4 flex scroll-mt-32 items-center gap-3 rounded-[24px] bg-ok-tint px-4 py-3 font-bold text-ok">
             <Critter kind="done" size={34} />
             已完成・{visit.reviewedBy ?? ""} {clock(visit.completedAt)}
+            {badge === "未擬計畫" ? "・未擬護理計畫" : badge === "本次不擬計畫" ? "・本次不擬計畫" : ""}
           </div>
         )}
         {content}
@@ -292,7 +309,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
         type="file"
         multiple
         hidden
-        accept="application/pdf,image/*,audio/*,.m4a,.mp3,.wav"
+        accept={`application/pdf,image/*,${AUDIO_ACCEPT}`}
         onChange={async (e) => {
           const files = Array.from(e.target.files ?? []);
           e.target.value = "";
@@ -355,7 +372,16 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
           </Button>
         }
       >
-        {blocked && <OtherBlockers visit={visit} kind={blocked.kind} />}
+        {blocked && (
+          <OtherBlockers
+            visit={visit}
+            kind={blocked.kind}
+            onJump={() => {
+              setBlocked(null);
+              setTimeout(() => jump("sec-plan"), 250);
+            }}
+          />
+        )}
         <ReviewBlock visit={visit} patient={patient} onEditVital={(k) => setVitalsOpen({ focus: k })} bare />
       </Sheet>
 
@@ -379,7 +405,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
           {
             label: visit.kind === "first" ? "改為再次訪視" : "改為初次訪視",
             icon: <Repeat size={21} />,
-            hint: visit.kind === "first" ? "不需全人評估，計畫沿用現行版本" : "需完成全人評估，計畫依評估擬定",
+            hint: visit.kind === "first" ? "計畫沿用現行版本" : "計畫依全人評估擬定；未填完可口述",
             onSelect: () => setVisitKind(visit.id, visit.kind === "first" ? "follow" : "first"),
           },
           {
@@ -399,15 +425,23 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
   );
 }
 
-/** 「先看這裡」以外的關卡：整理中、撰寫中、輸出檢核提醒。 */
-function OtherBlockers({ visit, kind }: { visit: Visit; kind: DocKind | "all" }) {
+/** 「先看這裡」以外的關卡：整理中、撰寫中、輸出檢核提醒、計畫的〔待核對〕。 */
+function OtherBlockers({ visit, kind, onJump }: { visit: Visit; kind: DocKind | "all"; onJump: () => void }) {
   const settings = useSettings();
-  const list = blockersFor(visit, kind).filter((b) => b.kind === "processing" || b.kind === "writing" || b.kind === "warning");
+  const list = blockersFor(visit, kind).filter((b) => b.kind === "processing" || b.kind === "writing" || b.kind === "warning" || b.kind === "unverified");
   if (list.length === 0) return null;
   return (
     <div className="mb-3 flex flex-col gap-3">
       {list.map((b) =>
-        b.kind === "warning" && b.doc ? (
+        b.kind === "unverified" ? (
+          <div key="unverified" className="rounded-[22px] bg-pending-tint p-4 outline-ink">
+            <p className="font-extrabold">{docTitle("plan", settings)}有〔待核對〕</p>
+            <p className="mt-1 text-[0.98rem]">口述沒有說過的數字或用詞，請按「修改」刪除或改正後再確認。</p>
+            <Button variant="primary" className="mt-3" onClick={onJump}>
+              前往計畫
+            </Button>
+          </div>
+        ) : b.kind === "warning" && b.doc ? (
           <div key={`w-${b.doc}`} className="rounded-[22px] bg-pending-tint p-4 outline-ink">
             <p className="font-extrabold">{docTitle(b.doc, settings)}的提醒</p>
             <ul className="mt-1.5 flex list-disc flex-col gap-1 pl-6 text-[0.98rem]">
@@ -451,6 +485,7 @@ function Brief({ visit, patient, onImport }: { visit: Visit; patient: Patient; o
   const flows = useFlows();
   const tubes = patient.tubes.map((t) => ({ ...t, due: nextDue(t.changedAt, t.intervalDays) }));
   const problems = patient.plan?.text.split("\n").filter((l) => /^(護理)?問題\s*\d/.test(l.trim())) ?? [];
+  const n = completedCount(patient.assessment);
   return (
     <div className="flex flex-col gap-4">
       {visit.kind === "first" && <AssessmentCard patient={patient} highlight />}
@@ -484,7 +519,7 @@ function Brief({ visit, patient, onImport }: { visit: Visit; patient: Patient; o
               ))}
             </ul>
           ) : (
-            <p className="text-ink-soft">{patient.plan ? "已有計畫" : "這次訪視後會擬定第 1 版"}</p>
+            <p className="text-ink-soft">{patient.plan ? "已有計畫" : n < 13 ? `全人評估 ${n}/13：訪視後可口述計畫` : "訪視後依全人評估擬定第 1 版"}</p>
           )}
         </section>
       </div>
@@ -496,7 +531,7 @@ function Brief({ visit, patient, onImport }: { visit: Visit; patient: Patient; o
           匯入文件
         </Button>
         <Button size="lg" onClick={() => flows.record(patient, "dictate")}>
-          口述
+          口述訪視
         </Button>
       </div>
     </div>

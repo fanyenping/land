@@ -18,7 +18,7 @@ export interface RecSnapshot {
 
 const MIME_CANDIDATES = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4;codecs=mp4a.40.2", "audio/mp4", "audio/aac"];
 
-function pickMime(): string {
+export function pickMime(): string {
   if (typeof MediaRecorder === "undefined") return "";
   return MIME_CANDIDATES.find((m) => MediaRecorder.isTypeSupported(m)) ?? "";
 }

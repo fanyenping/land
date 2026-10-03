@@ -2,6 +2,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { currentEngine, onEngine, probeEngine, type Engine } from "./api";
 import { db } from "./db";
+import { dictation } from "./dictation";
 import { DEFAULT_SETTINGS, type Patient, type Settings, type Visit } from "./model";
 import { recorder } from "./recorder";
 
@@ -35,6 +36,11 @@ export function usePatientVisits(patientId: string | undefined): Visit[] | undef
 
 export function useRecorder() {
   return useSyncExternalStore(recorder.subscribe, recorder.getSnapshot, recorder.getSnapshot);
+}
+
+/** 口述護理計畫的錄音狀態（計時、音量、錯誤）。 */
+export function useDictation() {
+  return useSyncExternalStore(dictation.subscribe, dictation.getSnapshot, dictation.getSnapshot);
 }
 
 export function useEngine(): Engine | null {

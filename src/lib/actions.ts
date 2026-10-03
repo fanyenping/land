@@ -3,8 +3,11 @@ import { allDocsText, docBody, docCopyText, docHeader, writeClipboard } from "./
 import { db, deleteVisitDeep, getSettings, putBlob, updatePatient, updateVisit, type StoredBlob } from "./db";
 import { addDays, todayStr } from "./format";
 import { CONSENT_VERSION, newId, type AudioPart, type OutputState, type Patient, type Settings, type Visit, type VisitDocument } from "./model";
-import { isRunning, newVisit, processVisit, regenerate, reprocessWithNewMaterial, scheduleVitalsRefresh } from "./pipeline";
+import { isRunning, newVisit, processVisit, regenerate, reprocessWithNewMaterial, savePlanDictationAudio, scheduleVitalsRefresh } from "./pipeline";
 import { audioDuration, recorder } from "./recorder";
+import { isAudioFile, voiceMemoProblem, withAudioMime } from "./audioFiles";
+import { dictation } from "./dictation";
+import { changesOpen, hasUnverified, includedKinds, openWarnings, visitComplete } from "./planSlot";
 import { confirmedVitalList, pendingVitals } from "./vitals";
 
 const nowIso = () => new Date().toISOString();
@@ -108,6 +111,9 @@ export async function scheduleVisit(patientId: string, date: string, time: strin
 }
 
 export async function startRecording(visitId: string) {
+  // 口述計畫的錄音先收好（兩個錄音器不同時進行）。
+  const d = dictation.getSnapshot();
+  if (d.state === "recording" || d.state === "starting") await finishPlanDictation(d.visitId);
   return recorder.start(visitId);
 }
 
@@ -130,7 +136,6 @@ export async function finishVisit(visitId: string) {
   return "ok" as const;
 }
 
-const AUDIO_EXT = /\.(m4a|mp3|wav|aac|webm|ogg|opus|amr|3gp)$/i;
 const DOC_EXT = /\.(pdf|jpe?g|png|webp|gif|heic|heif)$/i;
 const DOC_MIME = new Set(["application/pdf", "image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"]);
 const untyped = (f: File) => !f.type || f.type === "application/octet-stream";
@@ -138,9 +143,7 @@ const untyped = (f: File) => !f.type || f.type === "application/octet-stream";
 /** 上限與伺服器一致：每張照片 5 MB（先在手機縮圖）、每份 PDF 10 MB、文件合計約 28 MB、錄音合計 280 MB。 */
 export const FILE_LIMITS = { docsPerVisit: 10, pdfBytes: 10 * 1024 * 1024, docsTotalBytes: 28 * 1024 * 1024, audioTotalBytes: 280 * 1024 * 1024, imageEdge: 1600 };
 
-function isAudio(f: File) {
-  return f.type.startsWith("audio/") || (untyped(f) && AUDIO_EXT.test(f.name));
-}
+const isAudio = (f: File) => isAudioFile(f);
 
 function isDocument(f: File) {
   return DOC_MIME.has(f.type) || (untyped(f) && DOC_EXT.test(f.name));
@@ -198,7 +201,7 @@ export interface StoreResult {
 
 export async function storeFiles(visitId: string, files: File[]): Promise<StoreResult> {
   const { audio, docs, rejected } = classifyFiles(files);
-  const skipped: StoreResult["skipped"] = rejected.map((f) => ({ name: f.name, reason: "不支援的格式" }));
+  const skipped: StoreResult["skipped"] = rejected.map((f) => ({ name: f.name, reason: voiceMemoProblem(f) ?? "不支援的格式" }));
   const visit = await db.visits.get(visitId);
   let docCount = visit?.documents.length ?? 0;
   let docBytes = visit?.documents.reduce((n, d) => n + d.size, 0) ?? 0;
@@ -207,13 +210,20 @@ export async function storeFiles(visitId: string, files: File[]): Promise<StoreR
 
   const parts: AudioPart[] = [];
   for (const f of [...audio].sort((a, b) => audioSortKey(a).localeCompare(audioSortKey(b)))) {
+    const problem = voiceMemoProblem(f);
+    if (problem) {
+      skipped.push({ name: f.name, reason: problem });
+      continue;
+    }
     if (audioBytes + f.size > FILE_LIMITS.audioTotalBytes) {
       skipped.push({ name: f.name, reason: "錄音合計超過 280 MB" });
       continue;
     }
     audioBytes += f.size;
-    const blobKey = await putBlob(f, { visitId });
-    parts.push({ id: newId(), blobKey, mimeType: f.type || "audio/mp4", durationMs: await audioDuration(f), startedAt: new Date(f.lastModified).toISOString(), fileName: f.name });
+    // iPhone 給的類型可能是空白、octet-stream 或 video/mp4：存成正確的 audio MIME，伺服器才收得下。
+    const typed = withAudioMime(f, f.name);
+    const blobKey = await putBlob(typed, { visitId });
+    parts.push({ id: newId(), blobKey, mimeType: typed.type, durationMs: await audioDuration(f), startedAt: new Date(f.lastModified).toISOString(), fileName: f.name });
   }
   const documents: VisitDocument[] = [];
   for (const raw of docs) {
@@ -258,10 +268,10 @@ export function storeSummary(res: StoreResult, tail = "") {
   return `已加入 ${added} 個檔案${tail}${skip ? `，${skip}` : ""}`;
 }
 
-/** 匯入檔案到某位個案：建立今天的一筆訪視並開始產生 3 份。 */
+/** 匯入檔案到某位個案：用今天排定或中斷的那筆訪視（沒有就建立），並開始整理。 */
 export async function importToPatient(patientId: string, files: File[]): Promise<{ visitId: string | null; result: StoreResult }> {
   const today = todayStr();
-  const reuse = (await db.visits.where("patientId").equals(patientId).toArray()).find((v) => v.date === today && v.status === "scheduled");
+  const reuse = (await db.visits.where("patientId").equals(patientId).toArray()).find((v) => v.date === today && (v.status === "scheduled" || v.status === "interrupted"));
   const visit = reuse ?? { ...newVisit(patientId, today, hhmm()), kind: await visitKindFor(patientId) };
   if (!reuse) await db.visits.put(visit);
   let result: StoreResult;
@@ -340,7 +350,18 @@ export async function moveVisit(visitId: string, patientId: string) {
       const out = v.outputs[k];
       outputs[k] = { ...out, status: out.status === "confirmed" ? "edited" : out.status, planVersion: null, ...unconfirmed };
     }
-    return { patientId, identityConfirmed: true, outputs, status: v.status === "done" ? "review" : v.status, completedAt: null, previous: undefined };
+    // 計畫來源依新個案重新判斷（口述的內容是護理師說的，保留）。
+    return {
+      patientId,
+      identityConfirmed: true,
+      outputs,
+      status: v.status === "done" ? "review" : v.status,
+      completedAt: null,
+      previous: undefined,
+      planSource: v.planSource === "dictation" ? "dictation" : null,
+      planBase: undefined,
+      planDeferred: null,
+    };
   });
   // 未動過的草稿依新個案重寫；改過或確認過的以「新版本可比較」提供。
   if (processed) void reprocessWithNewMaterial(visitId, false);
@@ -359,6 +380,7 @@ export async function moveVisit(visitId: string, patientId: string) {
 export async function deleteVisit(visitId: string) {
   // 先結束錄音，剛錄的這段才會存進訪視，復原時不會遺失。
   if (recorder.getSnapshot().visitId === visitId) await recorder.stop();
+  if (dictation.getSnapshot().visitId === visitId) dictation.cancel();
   const v = await db.visits.get(visitId);
   if (!v) return null;
   const blobs: StoredBlob[] = await db.blobs.where("visitId").equals(visitId).toArray();
@@ -434,6 +456,8 @@ function reopenForVitals(v: Visit): Partial<Visit> {
   let reopened = false;
   for (const k of ["record", "plan"] as DocKind[]) {
     if (outputs[k].status !== "confirmed") continue;
+    // 口述的計畫不含數值行，數值改了不必重新確認。
+    if (k === "plan" && v.planSource === "dictation") continue;
     outputs[k] = { ...outputs[k], status: "edited", confirmedAt: null, confirmedBy: null, copiedAt: null };
     reopened = true;
   }
@@ -459,11 +483,11 @@ export async function confirmIdentity(visitId: string) {
 
 export async function decideSuggestion(visitId: string, id: string, decision: "adopted" | "skipped") {
   await updateVisit(visitId, (v) => ({ suggestions: { ...v.suggestions, [id]: decision } }));
-  if (decision === "adopted") await regenerate(visitId, "plan", [], null);
+  if (decision === "adopted") await regenerate(visitId, "plan", [], null, undefined, { auto: true });
 }
 
 export interface Blocker {
-  kind: "processing" | "writing" | "identity" | "vital" | "docs" | "changes" | "conflict" | "warning";
+  kind: "processing" | "writing" | "identity" | "vital" | "docs" | "changes" | "conflict" | "warning" | "unverified";
   label: string;
   key?: VitalKey;
   doc?: DocKind;
@@ -492,7 +516,7 @@ export async function resolveConflict(visitId: string, conflictId: string, choic
   const v = await db.visits.get(visitId);
   if (!v) return;
   for (const k of ["record", "plan", "edu"] as DocKind[]) {
-    if (v.outputs[k].status === "draft") void regenerate(visitId, k, [], null);
+    if (v.outputs[k].status === "draft") void regenerate(visitId, k, [], null, undefined, { auto: true });
   }
 }
 
@@ -500,15 +524,29 @@ export function openChanges(v: Visit) {
   return (v.analysis?.changes ?? []).filter((c) => !v.dismissedChanges.includes(c.id));
 }
 
-/** 複製前必須先處理的項目（規格「先看這裡」）。評估異動只擋護理計畫。 */
+const UNVERIFIED: Blocker = { kind: "unverified", label: "刪除或改正〔待核對〕", doc: "plan" };
+
+/**
+ * 複製前必須先處理的項目（規格「先看這裡」）。評估異動、〔待核對〕只擋護理計畫；
+ * 「全部」只含可以一起複製的幾份，計畫沒準備好就不含，不擋紀錄。
+ */
 export function blockersFor(v: Visit, kind: DocKind | "all"): Blocker[] {
   const out: Blocker[] = [];
+  // 口述的計畫只用護理師的口述：不等整理、不看數值與異動，只確認身分、寫完、〔待核對〕與提醒。
+  if (kind === "plan" && v.planSource === "dictation") {
+    const plan = v.outputs.plan;
+    if (v.analysis?.identityConcern && !v.identityConfirmed) out.push({ kind: "identity", label: "確認個案身分" });
+    if (plan.status === "writing") out.push({ kind: "writing", label: `等${DOC_LABEL.plan}寫完`, doc: "plan" });
+    if (hasUnverified(plan)) out.push(UNVERIFIED);
+    if (openWarnings(plan)) out.push({ kind: "warning", label: `看過${DOC_LABEL.plan}的提醒`, doc: "plan" });
+    return out;
+  }
   // 補資料或改個案後正在重新整理：等新的分析完成，才知道要核對什麼。
   if (!v.analysis || v.status === "waiting" || (v.status === "processing" && v.stage !== "write")) {
     return [{ kind: "processing", label: v.status === "waiting" ? "等網路恢復後整理完成" : "等資料整理完成" }];
   }
-  // 「全部」只看已有內容的幾份（還沒寫完的第一版不擋，按鈕會標示未完成）。
-  const kinds = kind === "all" ? (["record", "plan", "edu"] as DocKind[]).filter((k) => v.outputs[k].versions.length > 0) : [kind];
+  // 「全部」只看可以一起複製的幾份（還沒寫完的第一版不擋，按鈕會標示未完成）。
+  const kinds = kind === "all" ? includedKinds(v) : [kind];
   for (const k of kinds) {
     if (v.outputs[k].status === "writing") out.push({ kind: "writing", label: `等${DOC_LABEL[k]}寫完`, doc: k });
   }
@@ -516,7 +554,8 @@ export function blockersFor(v: Visit, kind: DocKind | "all"): Blocker[] {
   for (const r of pendingVitals(v)) out.push({ kind: "vital", label: `確認${VITAL_LABEL[r.key]}`, key: r.key });
   for (const c of openConflicts(v)) out.push({ kind: "conflict", label: `選定${c.topic}` });
   if (v.analysis.docFacts.some((f) => f.unclear) && !v.docsChecked) out.push({ kind: "docs", label: "對照文件重點" });
-  if ((kind === "plan" || kind === "all") && openChanges(v).length > 0 && !v.changesConfirmed) out.push({ kind: "changes", label: "確認評估異動" });
+  if (kind === "plan" && changesOpen(v)) out.push({ kind: "changes", label: "確認評估異動" });
+  if (kind === "plan" && hasUnverified(v.outputs.plan)) out.push(UNVERIFIED);
   for (const k of kinds) {
     if (hasOpenWarnings(v.outputs[k])) out.push({ kind: "warning", label: `看過${DOC_LABEL[k]}的提醒`, doc: k });
   }
@@ -524,7 +563,7 @@ export function blockersFor(v: Visit, kind: DocKind | "all"): Blocker[] {
 }
 
 export function hasOpenWarnings(out: OutputState) {
-  return !!out.versions[out.current]?.warnings?.length && !out.warningsAck;
+  return openWarnings(out);
 }
 
 /** 護理師看過輸出檢核的提醒（數字沒有來源、超出 AI 界線…）。 */
@@ -542,12 +581,15 @@ async function markConfirmed(visitId: string, kind: DocKind, extra: { copied?: b
 
   if (kind === "plan" && patient) {
     const settings = await getSettings();
+    const out = visit.outputs.plan;
+    const source = out.versions[out.current]?.source ?? visit.planSource ?? undefined;
+    const plan = (version: number): Patient["plan"] => ({ version, text: docBody("plan", visit, settings), confirmedAt: at, by, ...(source ? { source } : {}) });
     if (!planVersion) {
       planVersion = (patient.plan?.version ?? 0) + 1;
-      await updatePatient(patient.id, { plan: { version: planVersion, text: docBody("plan", visit, settings), confirmedAt: at, by } });
+      await updatePatient(patient.id, { plan: plan(planVersion) });
     } else if (patient.plan?.version === planVersion) {
       // 同一版修改後再確認：個案的現行計畫跟著更新（版號不變）。
-      await updatePatient(patient.id, { plan: { version: planVersion, text: docBody("plan", visit, settings), confirmedAt: at, by } });
+      await updatePatient(patient.id, { plan: plan(planVersion) });
     }
   }
 
@@ -565,9 +607,12 @@ async function markConfirmed(visitId: string, kind: DocKind, extra: { copied?: b
         planVersion: kind === "plan" ? planVersion : out.planVersion,
       },
     };
-    const allDone = (["record", "plan", "edu"] as DocKind[]).every((k) => outputs[k].status === "confirmed");
+    const planDeferred = kind === "plan" ? null : v.planDeferred;
+    // 完成：紀錄確認；衛教沒有或已確認；計畫沒有、已確認或本次不擬。
+    const allDone = visitComplete({ ...v, outputs, planDeferred });
     return {
       outputs,
+      ...(kind === "plan" ? { planDeferred: null } : {}),
       reviewedAt: v.reviewedAt ?? at,
       reviewedBy: v.reviewedBy ?? by,
       status: allDone ? "done" : v.status,
@@ -575,13 +620,18 @@ async function markConfirmed(visitId: string, kind: DocKind, extra: { copied?: b
     };
   });
 
+  await updateLast(visitId);
+}
+
+/** 紀錄確認後，個案的「上次」換成這筆。只往前推：補完較早的訪視時不蓋掉較新的。 */
+async function updateLast(visitId: string) {
   const after = await db.visits.get(visitId);
-  // 個案的「上次」只往前推：補完較早的訪視時不蓋掉較新的。
-  if (after?.status === "done" && patient && after.analysis && (!patient.last || patient.last.visitId === after.id || patient.last.date <= after.date)) {
-    await updatePatient(patient.id, {
-      last: { date: after.date, summary: after.analysis.summary, vitals: confirmedVitalList(after), findings: after.analysis.findings.slice(0, 4).map((f) => f.text), visitId: after.id },
-    });
-  }
+  const patient = after && (await db.patients.get(after.patientId));
+  if (!after || !patient || !after.analysis || after.outputs.record.status !== "confirmed") return;
+  if (patient.last && patient.last.visitId !== after.id && patient.last.date > after.date) return;
+  await updatePatient(patient.id, {
+    last: { date: after.date, summary: after.analysis.summary, vitals: confirmedVitalList(after), findings: after.analysis.findings.slice(0, 4).map((f) => f.text), visitId: after.id },
+  });
 }
 
 /**
@@ -604,24 +654,26 @@ export async function confirmOnly(visit: Visit, kind: DocKind) {
   return [];
 }
 
-export async function confirmAll(visit: Visit, patient: Patient | undefined, settings: Settings): Promise<{ ok: boolean; blockers: Blocker[]; kinds: DocKind[] }> {
-  const kinds = (["record", "plan", "edu"] as DocKind[]).filter((k) => visit.outputs[k].versions.length > 0);
+/** 全部確認並複製：只含可以一起複製的幾份；計畫沒準備好時不含（planLeftOut），紀錄照常複製。 */
+export async function confirmAll(visit: Visit, patient: Patient | undefined, settings: Settings): Promise<{ ok: boolean; blockers: Blocker[]; kinds: DocKind[]; planLeftOut: boolean }> {
+  const kinds = includedKinds(visit);
+  const planLeftOut = !kinds.includes("plan");
   const blockers = blockersFor(visit, "all");
-  if (blockers.length) return { ok: false, blockers, kinds };
+  if (blockers.length) return { ok: false, blockers, kinds, planLeftOut };
   const ok = await writeClipboard(allDocsText(visit, patient, settings, kinds));
   if (ok) for (const k of kinds) await markConfirmed(visit.id, k, { copied: true });
-  return { ok, blockers: [], kinds };
+  return { ok, blockers: [], kinds, planLeftOut };
 }
 
 /**
- * 照護紀錄導出前：與「全部確認並複製」同一道關卡，已有內容的幾份一起標成確認。
- * 回傳擋下的項目（有就不導出）。
+ * 照護紀錄導出前：與「全部確認並複製」同一道關卡，可以一起確認的幾份標成確認；
+ * 計畫只有護理師勾選（includePlan）且可以複製時才一起確認。回傳擋下的項目（有就不導出）。
  */
-export async function confirmForExport(visit: Visit): Promise<Blocker[]> {
+export async function confirmForExport(visit: Visit, opts: { includePlan: boolean } = { includePlan: true }): Promise<Blocker[]> {
   const blockers = blockersFor(visit, "all");
   if (blockers.length) return blockers;
-  for (const k of ["record", "plan", "edu"] as DocKind[]) {
-    if (visit.outputs[k].versions.length && visit.outputs[k].status !== "confirmed") await markConfirmed(visit.id, k, {});
+  for (const k of includedKinds(visit).filter((k) => k !== "plan" || opts.includePlan)) {
+    if (visit.outputs[k].status !== "confirmed") await markConfirmed(visit.id, k, {});
   }
   return [];
 }
@@ -641,6 +693,64 @@ export async function markEduCopied(visitId: string) {
   await markConfirmed(visitId, "edu", { copied: true });
 }
 
+/* ----------------------------- 護理計畫：口述與本次不擬 ----------------------------- */
+
+/** 開始口述護理計畫（訪視錄音進行中、試用版或不支援錄音時回傳說明）。滿 8 分鐘自動收好並整理。 */
+export async function startPlanDictation(visitId: string, opts?: { onLimit?: () => void }): Promise<{ ok: true } | { ok: false; message: string }> {
+  const snap = dictation.getSnapshot();
+  if ((snap.state === "recording" || snap.state === "starting") && snap.visitId !== visitId) await finishPlanDictation(snap.visitId);
+  const ok = await dictation.start(visitId, {
+    onLimit: () => {
+      void finishPlanDictation(visitId).then(() => opts?.onLimit?.());
+    },
+  });
+  if (ok) return { ok: true };
+  return { ok: false, message: dictation.getSnapshot().error ?? "麥克風無法啟動，請再試一次。" };
+}
+
+let finishing: Promise<void> | null = null;
+
+/** 完成口述：收好錄音、存進這筆訪視的口述（不進訪視錄音段），然後轉文字並自動整理。重複呼叫只存一次。 */
+export function finishPlanDictation(visitId?: string | null): Promise<void> {
+  if (finishing) return finishing;
+  const snap = dictation.getSnapshot();
+  if (snap.state !== "recording" && snap.state !== "starting") return Promise.resolve();
+  const target = snap.visitId ?? visitId ?? null;
+  finishing = (async () => {
+    const res = await dictation.stop();
+    if (res && target && res.blob.size > 0) await savePlanDictationAudio(target, res.blob, { input: "mic", fileName: null, durationMs: res.durationMs });
+  })().finally(() => {
+    finishing = null;
+  });
+  return finishing;
+}
+
+export function cancelPlanDictation(): void {
+  dictation.cancel();
+}
+
+/** 本次不擬計畫：紀錄照常完成，計畫維持現行版本。 */
+export async function deferPlan(visitId: string) {
+  const by = await confirmer();
+  const at = nowIso();
+  let complete = false;
+  await updateVisit(visitId, (v) => {
+    const next: Visit = { ...v, planDeferred: { by, at } };
+    complete = visitComplete(next) && v.status !== "done";
+    return { planDeferred: next.planDeferred, ...(complete ? { status: "done" as const, completedAt: at } : {}) };
+  });
+  if (complete) await updateLast(visitId);
+}
+
+/** 恢復擬計畫：已完成的訪視若因此還沒完成，退回待確認。 */
+export async function resumePlan(visitId: string) {
+  await updateVisit(visitId, (v) => {
+    const next: Visit = { ...v, planDeferred: null };
+    const reopen = v.status === "done" && !visitComplete(next);
+    return { planDeferred: null, ...(reopen ? { status: "review" as const, completedAt: null } : {}) };
+  });
+}
+
 /* ----------------------------- 版本 ----------------------------- */
 
 /** 內容換了：先前的確認、複製、分享都不再代表這一版。 */
@@ -649,7 +759,10 @@ const unconfirmed = { confirmedAt: null, confirmedBy: null, copiedAt: null, shar
 export async function saveEdit(visitId: string, kind: DocKind, sections: DocSection[]) {
   await updateVisit(visitId, (v) => {
     const out = v.outputs[kind];
-    const versions = [...out.versions, { id: newId(), sections, origin: "nurse" as const, note: "護理師修改", createdAt: nowIso(), meta: null }];
+    const cur = out.versions[out.current];
+    // 修改不改變來源：口述版仍保留口述編號與原文（對照用）。
+    const keep = { ...(cur?.source ? { source: cur.source } : {}), ...(cur?.dictationId ? { dictationId: cur.dictationId } : {}), ...(cur?.sourceText !== undefined ? { sourceText: cur.sourceText } : {}) };
+    const versions = [...out.versions, { id: newId(), sections, origin: "nurse" as const, note: "護理師修改", createdAt: nowIso(), meta: null, ...keep }];
     return {
       status: v.status === "done" ? "review" : v.status,
       completedAt: v.status === "done" ? null : v.completedAt,
@@ -671,6 +784,8 @@ export async function restoreVersion(visitId: string, kind: DocKind, index: numb
       completedAt: v.status === "done" ? null : v.completedAt,
       outputs: { ...v.outputs, [kind]: { ...out, versions, current: versions.length - 1, candidate: null, status: "edited" as const, warningsAck: false, ...unconfirmed } },
       ...(kind === "edu" ? { translations: {} } : {}),
+      // 計畫的來源跟著改用的那一版。
+      ...(kind === "plan" && src.source ? { planSource: src.source } : {}),
     };
   });
 }
@@ -679,6 +794,7 @@ export async function resolveCandidate(visitId: string, kind: DocKind, accept: b
   await updateVisit(visitId, (v) => {
     const out = v.outputs[kind];
     if (out.candidate === null) return;
+    const picked = out.versions[accept ? out.candidate : out.current];
     return {
       status: accept && v.status === "done" ? "review" : v.status,
       completedAt: accept && v.status === "done" ? null : v.completedAt,
@@ -689,6 +805,8 @@ export async function resolveCandidate(visitId: string, kind: DocKind, accept: b
           : { ...out, candidate: null },
       },
       ...(accept && kind === "edu" ? { translations: {} } : {}),
+      // 計畫的來源跟著留下的那一版。
+      ...(kind === "plan" && picked?.source ? { planSource: picked.source } : {}),
     };
   });
 }

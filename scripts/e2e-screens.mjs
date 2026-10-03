@@ -15,6 +15,30 @@ const browser = await chromium.launch({
 
 const errors = [];
 
+/** 等元素出現；逾時記一筆錯誤但不中斷流程。 */
+async function expectVisible(tag, loc, what, timeout = 15_000) {
+  try {
+    await loc.first().waitFor({ timeout });
+    return true;
+  } catch {
+    errors.push(`[${tag}] missing: ${what}`);
+    return false;
+  }
+}
+
+/** 等到畫面上不再有符合的元素（例：「正在產生新版本…」）。 */
+async function waitGone(loc, timeout = 60_000) {
+  const end = Date.now() + timeout;
+  while ((await loc.count()) > 0) {
+    if (Date.now() > end) return false;
+    await loc.first().page().waitForTimeout(300);
+  }
+  return true;
+}
+
+// 全人評估未完成時用打字口述護理計畫（deep 的周美玉）。
+const PLAN_TYPED = "問題一 皮膚完整性受損，目標兩週內傷口不擴大，措施每次訪視換藥，教女兒每兩小時翻身。家屬的部分，女兒願意學換藥。下次訪視再評值傷口。";
+
 async function run(name, viewport, isMobile) {
   const ctx = await browser.newContext({ viewport, deviceScaleFactor: 2, isMobile, hasTouch: isMobile, locale: "zh-TW", ignoreHTTPSErrors: true });
   await ctx.grantPermissions(["clipboard-read", "clipboard-write", "microphone"], { origin: BASE });
@@ -62,6 +86,8 @@ async function run(name, viewport, isMobile) {
   if (await fix.count()) await fix.click();
   const changes = page.getByRole("button", { name: "異動已確認" }).first();
   if (await changes.count()) await changes.click();
+  // 改成建議值會重寫文件；計畫寫好、異動確認後才會一起複製。
+  await waitGone(page.getByText(/正在產生新版本…|產生新版本中…/));
   await page.getByRole("button", { name: /全部確認並複製/ }).first().click();
   await page.waitForTimeout(600);
   await shot("06-workspace-copied");
@@ -82,6 +108,8 @@ async function run(name, viewport, isMobile) {
   await page.waitForURL(/\/v\/[^/]+$/);
   await shot("09-processing");
   await page.getByText(/確認並複製護理紀錄|再複製一次護理紀錄/).first().waitFor({ timeout: 90_000 });
+  // 林○妹是複訪、全人評估 13/13、有現行第 2 版：計畫沿用並評值。
+  await expectVisible(name, page.getByText("沿用第 2 版"), "plan pill 沿用第 2 版", 30_000);
   await page.waitForTimeout(800);
   await shot("10-workspace-new");
   await full("10-workspace-new");
@@ -95,6 +123,7 @@ async function run(name, viewport, isMobile) {
   await page.goto(`${BASE}/`);
   await page.getByRole("button", { name: /新紀錄/ }).first().click();
   await page.getByRole("dialog").waitFor();
+  await expectVisible(name, page.getByRole("dialog").getByRole("button", { name: "iPhone 語音備忘錄", exact: true }), "新紀錄 tile iPhone 語音備忘錄", 5_000);
   await shot("12-new-record");
 
   await ctx.close();
@@ -140,6 +169,9 @@ async function deep() {
   await chooser.setFiles({ name: "出院病摘.pdf", mimeType: "application/pdf", buffer: pdf });
   await page.waitForURL(/\/v\/[^/]+$/);
   await page.getByText(/確認並複製|再複製一次/).first().waitFor({ timeout: 60_000 });
+  // 全人評估 0/13、沒有現行計畫：計畫等口述，不自動擬；紀錄與衛教照樣可以確認複製。
+  await expectVisible("deep", page.getByText("全人評估 0/13 未完成"), "plan slot 全人評估 0/13 未完成", 30_000);
+  await expectVisible("deep", page.getByRole("button", { name: "確認並複製 2 份" }), "copy-all 確認並複製 2 份", 30_000);
   await shot("02-pdf-intake", true);
 
   // 修改 → 版本紀錄
@@ -175,6 +207,19 @@ async function deep() {
   await page.getByRole("button", { name: /翻成印尼文/ }).click();
   await page.getByText("Bahasa Indonesia").first().waitFor({ timeout: 30_000 });
   await shot("05-translate");
+
+  // 護理計畫：打字口述 → AI 只整理語句 → 確認並複製
+  await page.getByRole("button", { name: "打字輸入" }).first().click();
+  await page.getByLabel(/口述內容|口述原文/).first().fill(PLAN_TYPED);
+  await page.getByRole("button", { name: "AI 整理成計畫" }).click();
+  await page.locator("#sec-plan").getByText("依據：護理師口述").first().waitFor({ timeout: 30_000 });
+  await expectVisible("deep", page.getByText("護理師口述・AI 只整理語句"), "plan pill 護理師口述・AI 只整理語句");
+  await shot("05a-plan-dictation");
+  await page.getByRole("button", { name: "確認並複製護理計畫" }).click();
+  if (!(await expectVisible("deep", page.locator("#sec-plan").getByRole("button", { name: /已複製|再複製一次護理計畫/ }), "dictated plan confirmed", 5_000))) {
+    // 被擋下時會開提醒面板：關掉再繼續導出。
+    if (await page.getByRole("dialog").count()) await page.keyboard.press("Escape");
+  }
 
   // 照護紀錄導出：補欄位 → 產生 PDF → 下載並檢查內容
   await page.getByRole("button", { name: "照護紀錄導出", exact: true }).click();
@@ -229,8 +274,85 @@ async function deep() {
   await ctx.close();
 }
 
+/**
+ * iPhone 語音備忘錄：⋯ →「iPhone 語音備忘錄」→ 說明 → 選 m4a → 本次病摘。
+ * 高○珍初訪、全人評估 8/13、沒有現行計畫：紀錄先確認複製（不含計畫），再口述計畫。
+ */
+async function iphone() {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: "zh-TW", ignoreHTTPSErrors: true });
+  await ctx.grantPermissions(["clipboard-read", "clipboard-write", "microphone"], { origin: BASE });
+  const page = await ctx.newPage();
+  page.on("pageerror", (e) => errors.push(`[iphone] pageerror: ${e.message}`));
+  const shot = async (label, fullPage = false) => {
+    await page.waitForTimeout(450);
+    await page.screenshot({ path: `${OUT}/iphone-${label}.png`, fullPage });
+  };
+  await page.goto(`${BASE}/`);
+  await page.waitForURL("**/welcome");
+  await page.getByPlaceholder("例如 林護理師").fill("林護理師");
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "用示範個案開始" }).click();
+  await page.getByText("今日個案").waitFor();
+
+  // 高○珍的 ⋯ →「iPhone 語音備忘錄」→ 說明面板
+  await page.locator("article", { hasText: "高○珍" }).getByRole("button", { name: "更多" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: /iPhone 語音備忘錄/ }).click();
+  const guide = page.getByRole("dialog", { name: "從 iPhone 語音備忘錄加入" });
+  await expectVisible("iphone", guide, "guide title 從 iPhone 語音備忘錄加入", 5_000);
+  await shot("01-memo-guide");
+
+  // 從檔案選錄音：語音備忘錄存出來的 m4a（類型 audio/x-m4a）
+  const [chooser] = await Promise.all([page.waitForEvent("filechooser"), guide.getByRole("button", { name: "從檔案選錄音" }).click()]);
+  const input = chooser.element();
+  const accept = (await input.getAttribute("accept")) ?? "";
+  for (const want of [".m4a", "audio/x-m4a", "audio/mp4"]) if (!accept.split(",").includes(want)) errors.push(`[iphone] picker accept missing ${want}: ${accept}`);
+  if (accept.split(",").includes(".mp4")) errors.push(`[iphone] picker accept must not include .mp4`);
+  if ((await input.getAttribute("capture")) !== null) errors.push("[iphone] audio picker must not have capture");
+  await chooser.setFiles({ name: "新錄音 3.m4a", mimeType: "audio/x-m4a", buffer: Buffer.alloc(2048, 1) });
+  await page.waitForURL(/\/v\/[^/]+$/);
+  await page.getByText(/確認並複製護理紀錄|再複製一次護理紀錄/).first().waitFor({ timeout: 90_000 });
+  await shot("02-memo-record");
+
+  // 全人評估 8/13、沒有現行計畫：計畫等口述
+  await expectVisible("iphone", page.getByText("全人評估 8/13 未完成"), "plan slot 全人評估 8/13 未完成", 30_000);
+  await expectVisible("iphone", page.getByRole("button", { name: "口述護理計畫" }), "button 口述護理計畫", 5_000);
+
+  // 數值核對後，紀錄與衛教先確認複製（不含計畫）
+  const fix = page.getByRole("button", { name: /^改成/ }).first();
+  if (await fix.count()) await fix.click();
+  await page.waitForTimeout(300);
+  if (!(await waitGone(page.getByText(/正在產生新版本…|產生新版本中…/)))) errors.push("[iphone] regenerate did not finish");
+  await page.getByRole("button", { name: "確認並複製 2 份" }).click();
+  await page.waitForTimeout(600);
+  await shot("03-copied-without-plan");
+  const clip = await page.evaluate(() => navigator.clipboard.readText()).catch(() => "");
+  if (!clip.includes("護理紀錄")) errors.push(`[iphone] clipboard missing 護理紀錄: ${clip.slice(0, 80)}`);
+  if (clip.includes("【護理計畫】")) errors.push("[iphone] clipboard must not include 【護理計畫】 before the plan exists");
+  if (await page.getByRole("dialog").count()) {
+    errors.push(`[iphone] copy-all was blocked: ${(await page.getByRole("dialog").first().innerText()).slice(0, 120)}`);
+    await page.keyboard.press("Escape");
+  }
+
+  // 口述計畫：打字 → 填入示範口述 → AI 整理成計畫
+  await page.getByRole("button", { name: "打字輸入" }).first().click();
+  await page.getByRole("button", { name: "填入示範口述" }).click();
+  await page.getByRole("button", { name: "AI 整理成計畫" }).click();
+  await page.locator("#sec-plan").getByText("依據：護理師口述").first().waitFor({ timeout: 30_000 });
+  const planText = await page.locator("#sec-plan").innerText();
+  if (!planText.includes("問題 1：皮膚完整性受損")) errors.push(`[iphone] dictated plan missing 問題 1：皮膚完整性受損`);
+  if (/嗯|我口述一下/.test(planText)) errors.push("[iphone] dictated plan still has fillers (嗯／我口述一下)");
+  await shot("04-plan-dictation");
+  await page.locator("#sec-plan").screenshot({ path: `${OUT}/iphone-05-plan-card.png` });
+
+  // 計畫口述不會變成訪視錄音：來源仍是 1 段（語音備忘錄）
+  await expectVisible("iphone", page.getByRole("button", { name: /^來源：.*錄音 1 段/ }), "sources button 錄音 1 段", 5_000);
+  await shot("06-workspace-full", true);
+  await ctx.close();
+}
+
 try {
   await deep();
+  await iphone();
   await run("phone", { width: 390, height: 844 }, true);
   await run("desktop", { width: 1440, height: 900 }, false);
 } catch (e) {

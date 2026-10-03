@@ -7,10 +7,11 @@ import { Button, Chip, Field, Segmented, Spinner, cx, inputClass } from "../comp
 import { confirmForExport, logExport, type Blocker } from "../lib/actions";
 import { db, saveSettings, updatePatient, updateVisit } from "../lib/db";
 import { TRIAL } from "../lib/env";
-import { writeClipboard } from "../lib/compose";
+import { planVersionFor, writeClipboard } from "../lib/compose";
 import { bytes, maskName } from "../lib/format";
 import { useSettings } from "../lib/hooks";
 import { newId, type CareEvent, type Patient, type Visit } from "../lib/model";
+import { planBaseFor, planCopyable, planExcludedReason } from "../lib/planSlot";
 import {
   EVENT_WINDOW_DAYS,
   RESIDENCE_OPTIONS,
@@ -73,9 +74,16 @@ function ExportBody({ visit, patient, onBlocked, onClose }: { visit: Visit; pati
   const missing = missingFields(visit, patient, settings).filter((m) => m !== "機構名稱");
   const services = serviceItemsFor(visit, patient);
   const vitalsCount = data.vitals ? Object.entries(data.vitals).filter(([k, v]) => k !== "measuredAt" && v !== "—").length : 0;
+  // 護理計畫：可以複製時預設一併確認（護理師可取消）；沒準備好就不含，導出不受影響。
+  const planOut = visit.outputs.plan;
+  const copyable = planCopyable(visit);
+  const [planPick, setPlanPick] = useState<boolean | null>(null);
+  const includePlan = copyable && (planPick ?? true);
+  const base = planBaseFor(visit, patient);
+  const printsBase = base ? `會印現行第 ${base.version} 版，註明本次未更新` : "尚未建立";
 
   const confirm = async () => {
-    const blockers = await confirmForExport(visit);
+    const blockers = await confirmForExport(visit, { includePlan });
     if (blockers.length) return onBlocked(blockers);
     setBusy(true);
     // 確認後重新讀一次（確認人員、計畫版號寫進去了）。
@@ -96,7 +104,28 @@ function ExportBody({ visit, patient, onBlocked, onClose }: { visit: Visit; pati
         <ul className="grid gap-1.5 text-[0.98rem] font-bold sm:grid-cols-2">
           <Included ok={!!data.main.record}>{settings.recordTitle}</Included>
           <Included ok={vitalsCount > 0}>生命徵象 {vitalsCount ? `${vitalsCount} 項` : "（未量測）"}</Included>
-          <Included ok={!!data.plan}>護理計畫 {data.plan?.version.replace(/（.*）/, "") ?? ""}</Included>
+          {planOut.status === "confirmed" ? (
+            <Included ok>{`護理計畫 第 ${planVersionFor(visit, patient)} 版`}</Included>
+          ) : copyable ? (
+            <li className="flex items-start gap-2">
+              <input
+                id="export-plan"
+                type="checkbox"
+                checked={includePlan}
+                onChange={(e) => setPlanPick(e.target.checked)}
+                className="mt-0.5 h-5 w-5 shrink-0 accent-ink"
+              />
+              <label htmlFor="export-plan" className="min-w-0">
+                {`一併確認護理計畫（設為第 ${planVersionFor(visit, patient)} 版）`}
+                {!includePlan && <span className="block text-[0.88rem] text-ink-soft">{`本次不含・${printsBase}`}</span>}
+              </label>
+            </li>
+          ) : (
+            <Included ok={false} no>
+              {`護理計畫：本次不含（${planExcludedReason(visit, patient) ?? "尚未擬定"}）`}
+              <span className="block text-[0.88rem]">{printsBase}</span>
+            </Included>
+          )}
           <Included ok={!!data.edu}>家屬衛教</Included>
           <Included ok>住院 {data.admissions.length}・急診 {data.erVisits.length}</Included>
         </ul>
@@ -293,10 +322,10 @@ function ReadyView({ ready, title, onEdit }: { ready: Ready; title: string; onEd
   );
 }
 
-function Included({ ok, children }: { ok: boolean; children: React.ReactNode }) {
+function Included({ ok, no, children }: { ok: boolean; no?: boolean; children: React.ReactNode }) {
   return (
     <li className={cx("flex items-center gap-2", !ok && "text-ink-soft")}>
-      <span className={cx("grid h-5 w-5 shrink-0 place-items-center rounded-full text-[0.7rem]", ok ? "bg-ink text-paper" : "bg-ink/10")}>{ok ? "✓" : ""}</span>
+      <span className={cx("grid h-5 w-5 shrink-0 place-items-center rounded-full text-[0.7rem]", ok ? "bg-ink text-paper" : "bg-ink/10")}>{ok ? "✓" : no ? "✕" : ""}</span>
       <span className="min-w-0">{children}</span>
     </li>
   );

@@ -3,6 +3,8 @@
  * 模擬一次約 24 分鐘、分兩段錄音的居家訪視：護理師、個案女兒、印尼籍看護。
  * 刻意保留一個常見的語音辨識錯誤（「三十六點八」被轉成「十六點八」），用來示範數值核對。
  */
+import type { Transcript } from "./types";
+
 export interface DemoSegment {
   startMs: number;
   endMs: number;
@@ -53,4 +55,25 @@ export const DEMO_DURATION_MS = s(23, 45);
 
 export function demoTranscriptText(): string {
   return DEMO_SEGMENTS.map((seg) => `${DEMO_SPEAKERS[seg.speaker] ?? seg.speaker}：${seg.text}`).join("\n");
+}
+
+/* ------------------------------ 護理計畫口述（示範） ------------------------------ */
+
+/**
+ * 示範用的護理計畫口述（虛構，寫給初次訪視的高○珍）：護理師離開案家後口述的這次計畫。
+ * 刻意保留一個常見的語音辨識錯誤（「血糖」被轉成「雪糖」），用來示範 AI 只修正明顯的同音錯字。
+ */
+export const DEMO_PLAN_DICTATION_TEXT =
+  "嗯，護理計畫我口述一下。第一個問題是皮膚完整性受損，左腳背的糖尿病足傷口大概三乘二公分，有一點黃色腐肉。目標是兩週內傷口不要再變大，周圍不要再紅。措施是每次訪視用生理食鹽水清潔換藥，教先生每天看傷口有沒有紅腫、滲液變多，出門要穿包鞋。第二個問題是血糖控制不穩定，今天飯前血糖兩百二十八。目標是一個月內飯前血糖控制在一百八以下。措施是教先生每天早上飯前驗雪糖並且記錄，胰島素照醫師開的時間打，不要自己調整。第三個問題是有跌倒的危險，她走路要扶助行器。目標是這個月都沒有跌倒。措施是浴室加止滑墊，晚上留小夜燈，起床先坐一下再站起來。家屬的部分，先生金水願意幫忙驗血糖和打胰島素。下次訪視兩個禮拜後，再看傷口和血糖紀錄。";
+
+export const DEMO_PLAN_DICTATION_MS = 72_000;
+
+/** 示範口述的逐字稿（一段，講者為護理師）。 */
+export function demoPlanTranscript(): Transcript {
+  return {
+    text: DEMO_PLAN_DICTATION_TEXT,
+    segments: [{ startMs: 0, endMs: DEMO_PLAN_DICTATION_MS, speaker: "S1", text: DEMO_PLAN_DICTATION_TEXT, confidence: 0.9 }],
+    durationMs: DEMO_PLAN_DICTATION_MS,
+    provider: "demo",
+  };
 }

@@ -4,10 +4,13 @@ import type {
   Analysis,
   DocKind,
   DocSection,
+  PlanSource,
   TranslateLang,
   Transcript,
   VitalKey,
 } from "../../shared/types";
+
+export type { PlanSource } from "../../shared/types";
 
 export type Gender = "女" | "男";
 
@@ -52,7 +55,8 @@ export interface Patient {
   tubes: Tube[];
   consent: RecordingConsent | null;
   consentRefusedAt: string | null;
-  plan: { version: number; text: string; confirmedAt: string; by: string } | null;
+  /** source：這版計畫怎麼來的（依全人評估、沿用、護理師口述）；舊資料沒有。 */
+  plan: { version: number; text: string; confirmedAt: string; by: string; source?: PlanSource } | null;
   /** 上一次完成的訪視（visitId：是哪一筆完成時寫入的）。 */
   last: { date: string; summary: string; vitals: { key: VitalKey; value: string; qualifier: string | null }[]; findings: string[]; visitId?: string } | null;
   isDemo: boolean;
@@ -93,7 +97,7 @@ export const STAGE_LABEL: Record<Stage, string> = {
   upload: "上傳",
   transcribe: "轉文字",
   analyze: "整理重點",
-  write: "撰寫 3 份",
+  write: "撰寫",
 };
 
 export interface AudioPart {
@@ -131,6 +135,10 @@ export interface OutputVersion {
   meta: AiMeta | null;
   /** 伺服器輸出檢核的提醒（數字無來源、超出 AI 界線…），護理師看過才能複製。 */
   warnings?: string[];
+  /** 護理計畫這一版的來源；口述版另記口述編號與當時的口述原文（對照用）。 */
+  source?: PlanSource;
+  dictationId?: string;
+  sourceText?: string;
 }
 
 export type OutputStatus = "idle" | "writing" | "draft" | "edited" | "confirmed" | "failed";
@@ -155,11 +163,26 @@ export interface OutputState {
 }
 
 export interface AppError {
-  stage: Stage | DocKind | "translate";
+  stage: Stage | DocKind | "translate" | "dictation";
   code: string;
   message: string;
   retryable: boolean;
   at: string;
+}
+
+/** 護理計畫口述：錄音只存在本機 blobs（putBlob(blob,{visitId})），絕不放進 visit.parts，也不送去整理訪視。 */
+export interface PlanDictation {
+  id: string;
+  input: "mic" | "file" | "typed";
+  audio: { blobKey: string; mimeType: string; durationMs: number; fileName: string | null } | null;
+  /** 轉好的文字（護理師可修正），或打字／貼上的文字。 */
+  text: string | null;
+  /** "azure-speech" | "whisper" | "demo" | "typed" */
+  provider: string | null;
+  status: "transcribing" | "review" | "polishing" | "done" | "failed";
+  error: AppError | null;
+  updatedAt: string;
+  by: string;
 }
 
 export interface Visit {
@@ -214,6 +237,13 @@ export interface Visit {
    * 之後重新產生仍要跟真正的上次比，不能跟自己比。
    */
   previous?: Patient["last"];
+  /** 護理計畫的來源：第一次寫入計畫時記下，之後只有護理師明確切換才改。 */
+  planSource?: PlanSource | null;
+  /** 這次訪視前生效的計畫快照（undefined＝還沒快照／舊資料；null＝之前沒有計畫）。 */
+  planBase?: Patient["plan"];
+  planDictation?: PlanDictation | null;
+  /** 本次不擬計畫：紀錄照常完成，計畫維持現行版本。 */
+  planDeferred?: { by: string; at: string } | null;
 }
 
 export interface Settings {

@@ -9,6 +9,8 @@ interface SheetProps {
   title: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
+  /** 標題列右側、關閉鈕左邊的按鈕（例：數值速記的麥克風）。 */
+  action?: ReactNode;
   /** 全螢幕（手機修改器等）。 */
   full?: boolean;
   wide?: boolean;
@@ -16,7 +18,7 @@ interface SheetProps {
 }
 
 /** 手機為底部面板、電腦為置中對話框。Esc 或點背景關閉。 */
-export function Sheet({ open, onClose, title, children, footer, full, wide, tone }: SheetProps) {
+export function Sheet({ open, onClose, title, children, footer, action, full, wide, tone }: SheetProps) {
   const id = useId();
   const panel = useRef<HTMLDivElement>(null);
   // onClose 每次 render 都可能是新函式；用 ref 讓開關時的聚焦邏輯只在 open 改變時執行一次。
@@ -36,9 +38,10 @@ export function Sheet({ open, onClose, title, children, footer, full, wide, tone
     const t = setTimeout(() => {
       const root = panel.current;
       if (!root || root.contains(document.activeElement)) return;
+      // 標題列的按鈕（關閉、action）不搶初始焦點。
       const target =
         root.querySelector<HTMLElement>("[data-autofocus]") ??
-        root.querySelector<HTMLElement>("input, textarea, select, button:not([aria-label='關閉'])");
+        [...root.querySelectorAll<HTMLElement>("input, textarea, select, button:not([aria-label='關閉'])")].find((el) => !el.closest("[data-sheet-action]"));
       target?.focus({ preventScroll: true });
     }, 60);
     document.body.style.overflow = "hidden";
@@ -72,6 +75,11 @@ export function Sheet({ open, onClose, title, children, footer, full, wide, tone
           <h2 id={id} className="min-w-0 flex-1 pt-2 text-[1.35rem] font-extrabold leading-snug">
             {title}
           </h2>
+          {action && (
+            <div data-sheet-action className="flex shrink-0 items-center">
+              {action}
+            </div>
+          )}
           <RoundButton label="關閉" size={44} onClick={onClose}>
             <X size={22} strokeWidth={2.6} />
           </RoundButton>

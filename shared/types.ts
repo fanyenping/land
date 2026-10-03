@@ -287,3 +287,21 @@ export interface HealthResponse {
   /** 伺服器設定了機構通行碼：除 /api/health 外的請求都要帶 X-Access-Code。 */
   auth?: boolean;
 }
+
+/* ------------------------- 護理計畫來源與口述整理 ------------------------- */
+
+/** 護理計畫的來源：依全人評估擬定、沿用現行計畫＋本次評值、護理師口述（AI 只整理語句）。 */
+export type PlanSource = "assessment" | "carried" | "dictation";
+
+export const PLAN_SOURCE_LABEL: Record<PlanSource, string> = { assessment: "依全人評估", carried: "沿用現行計畫", dictation: "護理師口述" };
+
+/** POST /api/polish-plan：只帶護理師核對過的口述文字與格式選項，不帶分析、生命徵象、評估或現行計畫。 */
+export interface PolishPlanRequest {
+  visitDate: string;
+  dictation: string;
+  familyCallsAs: string | null;
+  hasCurrentPlan: boolean;
+  options: { instructions: string[]; custom: string | null };
+}
+
+export type PolishPlanResponse = GenerateResponse;

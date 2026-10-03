@@ -1,5 +1,6 @@
 import { demoAnalysis, demoGenerate, demoTranslate } from "../../shared/demo";
-import { DEMO_DURATION_MS, DEMO_SEGMENTS } from "../../shared/demoTranscript";
+import { DEMO_DURATION_MS, DEMO_SEGMENTS, demoPlanTranscript } from "../../shared/demoTranscript";
+import { localPolishPlan } from "../../shared/demoPolish";
 import type {
   AnalyzeRequest,
   AnalyzeResponse,
@@ -7,6 +8,8 @@ import type {
   GenerateRequest,
   GenerateResponse,
   HealthResponse,
+  PolishPlanRequest,
+  PolishPlanResponse,
   Transcript,
   TranslateRequest,
   TranslateResponse,
@@ -150,12 +153,14 @@ export async function verifyAccessCode(): Promise<"ok" | "wrong" | "offline"> {
   }
 }
 
-export async function transcribe(files: { blob: Blob; name: string }[], local: boolean, signal?: AbortSignal): Promise<Transcript> {
+/** purpose "plan"：口述護理計畫的錄音（示範引擎回示範口述，不是訪視逐字稿）。 */
+export async function transcribe(files: { blob: Blob; name: string }[], local: boolean, signal?: AbortSignal, purpose: "visit" | "plan" = "visit"): Promise<Transcript> {
   if (local) {
     await sleep(900);
-    return localTranscript();
+    return purpose === "plan" ? demoPlanTranscript() : localTranscript();
   }
   const form = new FormData();
+  form.append("purpose", purpose);
   for (const f of files) form.append("audio", f.blob, f.name);
   let res: Response;
   try {
@@ -180,6 +185,15 @@ export async function generate(req: GenerateRequest, local: boolean, signal?: Ab
     return { doc: demoGenerate(req), meta: { mode: "demo", model: null, promptVersion: "demo" } };
   }
   return postJson<GenerateResponse>("/api/generate", req, signal);
+}
+
+/** 口述護理計畫：只送護理師核對過的口述文字與格式選項，AI 只整理語句。 */
+export async function polishPlan(req: PolishPlanRequest, local: boolean, signal?: AbortSignal): Promise<PolishPlanResponse> {
+  if (local) {
+    await sleep(700);
+    return { ...localPolishPlan(req), meta: { mode: "demo", model: null, promptVersion: "demo" } };
+  }
+  return postJson<PolishPlanResponse>("/api/polish-plan", req, signal);
 }
 
 export async function translate(req: TranslateRequest, local: boolean, signal?: AbortSignal): Promise<TranslateResponse> {

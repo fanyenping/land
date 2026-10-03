@@ -2,6 +2,7 @@ import { addDays, clock, maskName } from "../lib/format";
 import { TRIAL } from "../lib/env";
 import { SHIFT_RANGE, type CareEvent, type Patient, type Settings, type Visit } from "../lib/model";
 import { currentSections, docBody, planVersionFor } from "../lib/compose";
+import { planBaseFor } from "../lib/planSlot";
 import type { CareRecordData, CareRecordRow } from "./types";
 
 /** 照護紀錄導出的固定選項（依原文件常見寫法）。 */
@@ -110,13 +111,26 @@ function recordText(visit: Visit): string {
   return blocks.join("\n\n");
 }
 
+/**
+ * 【護理計畫】：這次確認的計畫；這次沒有確認時印這次訪視前的現行計畫並註明「本次未更新」；
+ * 都沒有時註明本次未擬定。紀錄導出從不等計畫。
+ */
+function planSection(visit: Visit, patient: Patient, settings: Settings, nurse: string): CareRecordData["plan"] {
+  const plan = visit.outputs.plan;
+  if (plan.versions.length && plan.status === "confirmed") {
+    return { version: `第 ${planVersionFor(visit, patient)} 版${plan.confirmedAt ? `（${plan.confirmedAt.slice(0, 10)} 確認）` : ""}`, text: docBody("plan", visit, settings), confirmedBy: plan.confirmedBy ?? nurse };
+  }
+  const base = planBaseFor(visit, patient);
+  if (base) return { version: `第 ${base.version} 版（${base.confirmedAt.slice(0, 10)} 確認・本次未更新）`, text: base.text, confirmedBy: base.by };
+  return { version: "—", text: "本次未擬定護理計畫", confirmedBy: "—" };
+}
+
 /** 由一筆訪視組出照護紀錄導出的全部文字。 */
 export function careRecordData(visit: Visit, patient: Patient, settings: Settings, now = new Date()): CareRecordData {
   const { start, end } = visitTime(visit);
   const height = patient.heightCm ?? "";
   const body = visit.body ?? {};
   const nurse = settings.nurseName || "護理師";
-  const plan = visit.outputs.plan;
   const edu = visit.outputs.edu;
   const from = addDays(visit.date, -EVENT_WINDOW_DAYS);
   return {
@@ -143,9 +157,7 @@ export function careRecordData(visit: Visit, patient: Patient, settings: Setting
     admissions: eventRows(patient, visit, "admission"),
     erVisits: eventRows(patient, visit, "er"),
     eventRange: `${from} 至 ${visit.date}`,
-    plan: plan.versions.length
-      ? { version: `第 ${planVersionFor(visit, patient)} 版${plan.confirmedAt ? `（${plan.confirmedAt.slice(0, 10)} 確認）` : ""}`, text: docBody("plan", visit, settings), confirmedBy: plan.confirmedBy ?? nurse }
-      : null,
+    plan: planSection(visit, patient, settings, nurse),
     edu: edu.versions.length ? { text: docBody("edu", visit, settings), confirmedBy: edu.confirmedBy ?? nurse } : null,
     exporter: nurse,
     exportedAt: exportStamp(now),
