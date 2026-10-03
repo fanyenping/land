@@ -66,6 +66,7 @@ export function Welcome() {
             <Critter kind="audio" size={40} />
             <Critter kind="pdf" size={40} />
           </div>
+          <p className="mt-4 text-[0.95rem] font-bold tracking-wide opacity-70">本一科技TaiOne Care Q</p>
         </div>
 
         <div className="flex flex-col gap-4 rounded-[30px] bg-card p-5 outline-ink">
