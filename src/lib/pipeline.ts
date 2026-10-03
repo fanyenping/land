@@ -1,5 +1,5 @@
 import type { AnalyzeRequest, DocKind, GenerateRequest, GenerateResponse, PatientContext, PlanSource, PolishPlanRequest, PreviousVisit, TranslateLang, VisitKind } from "../../shared/types";
-import { PLAN_DICTATION_MAX_CHARS } from "../../shared/planPolish";
+import { PLAN_DICTATION_MAX_CHARS, normalizeDictation } from "../../shared/planPolish";
 import { PipelineError, analyze, currentEngine, generate, polishPlan, probeEngine, transcribe, translate } from "./api";
 import { PLAN_AUDIO_MAX_BYTES, withAudioMime } from "./audioFiles";
 import { db, getBlob, getSettings, putBlob, updateVisit } from "./db";
@@ -7,12 +7,27 @@ import { ageOf } from "./format";
 import { assessmentSummary } from "../assessment/forms";
 import { TRIAL } from "./env";
 import { emptyOutput, newId, type AppError, type OutputState, type OutputVersion, type Patient, type PlanDictation, type Settings, type Stage, type Visit } from "./model";
-import { planAutoWritable, planBaseFor, planSlot } from "./planSlot";
+import { autoPlanStale, planAutoWritable, planBaseFor, planSlot, recoverOutput, undeferPatch, visitComplete } from "./planSlot";
 import { audioDuration } from "./recorder";
 import { confirmedVitalList, initialVitals } from "./vitals";
 
 const KINDS: DocKind[] = ["record", "plan", "edu"];
 const running = new Map<string, Promise<void>>();
+
+/** 這個分頁正在跑的背景工作（各份撰寫、口述轉文字／整理）。App 重新開啟後不在這裡的就是被中斷了。 */
+const liveJobs = new Map<string, number>();
+const jobKey = (visitId: string, what: DocKind | "dictation") => `${visitId}:${what}`;
+
+async function tracked<T>(key: string, job: () => Promise<T>): Promise<T> {
+  liveJobs.set(key, (liveJobs.get(key) ?? 0) + 1);
+  try {
+    return await job();
+  } finally {
+    const n = (liveJobs.get(key) ?? 1) - 1;
+    if (n > 0) liveJobs.set(key, n);
+    else liveJobs.delete(key);
+  }
+}
 
 /** 處理途中紀錄被改到其他個案（或復原）：這一輪作廢，依新狀態重來。 */
 class Moved extends Error {}
@@ -195,8 +210,11 @@ async function run(visitId: string) {
 
     const after = samePatient(await db.visits.get(visitId), patient.id);
     const allFailed = KINDS.filter((k) => k !== "plan" || auto).every((k) => after.outputs[k].status === "failed");
+    // 撰寫期間護理師已確認完（確認不會在處理中直接改成已完成）：寫完才算完成。補資料重整的（reviewedAt 已清掉）回到待確認。
+    const done = !allFailed && (after.status === "done" || (!!after.reviewedAt && visitComplete(after)));
     await updateVisit(visitId, {
-      status: allFailed ? "failed" : after.status === "done" ? "done" : "review",
+      status: allFailed ? "failed" : done ? "done" : "review",
+      ...(done && !after.completedAt ? { completedAt: now() } : {}),
       stage: null,
       stageStartedAt: null,
       error: allFailed ? after.outputs.record.error : null,
@@ -323,6 +341,11 @@ async function applyVersion(visitId: string, kind: DocKind, res: GenerateRespons
     // 產生期間被改到其他個案：這份是依原個案寫的，丟棄。
     if (v.patientId !== o.patientId) return { outputs: { ...v.outputs, [kind]: { ...v.outputs[kind], busy: false } } };
     const out = v.outputs[kind];
+    // 系統自動寫的計畫：寫好時護理師已改用口述、換了來源或本次不擬，這份不採用。
+    if (kind === "plan" && !o.explicit && o.source && autoPlanStale(v, o.source)) {
+      const status = out.status === "writing" ? (out.versions.length ? "draft" : "idle") : out.status;
+      return { outputs: { ...v.outputs, plan: { ...out, status, busy: false } } };
+    }
     const version: OutputVersion = {
       id: newId(),
       sections: res.doc.sections,
@@ -349,7 +372,11 @@ async function applyVersion(visitId: string, kind: DocKind, res: GenerateRespons
   });
 }
 
-async function writeDoc(visitId: string, kind: DocKind, opts: WriteOptions) {
+function writeDoc(visitId: string, kind: DocKind, opts: WriteOptions): Promise<void> {
+  return tracked(jobKey(visitId, kind), () => doWrite(visitId, kind, opts));
+}
+
+async function doWrite(visitId: string, kind: DocKind, opts: WriteOptions) {
   let mode: PlanSource | null = null;
   if (kind === "plan") {
     await ensurePlanBase(visitId);
@@ -383,7 +410,7 @@ async function writeDoc(visitId: string, kind: DocKind, opts: WriteOptions) {
 
   try {
     const res = await withRetry(() => generate(req, local));
-    await applyVersion(visitId, kind, res, { note: opts.note ?? null, patientId: patient.id, source: mode ?? undefined, explicit: !!opts.source, ...(opts.source ? { patch: () => ({ planDeferred: null }) } : {}) });
+    await applyVersion(visitId, kind, res, { note: opts.note ?? null, patientId: patient.id, source: mode ?? undefined, explicit: !!opts.source, ...(opts.source ? { patch: undeferPatch } : {}) });
   } catch (err) {
     const e = toError(kind, err);
     const network = e.code === "network";
@@ -510,7 +537,7 @@ export async function savePlanDictationAudio(
   };
   await updateVisit(visitId, (v) => {
     old = v.planDictation?.audio?.blobKey;
-    return { planDictation: dictation, planDeferred: null };
+    return { planDictation: dictation, ...undeferPatch(v) };
   });
   if (old && old !== blobKey) await db.blobs.delete(old);
   void transcribePlanDictation(visitId);
@@ -527,7 +554,15 @@ function joinSegments(parts: string[]): string {
 }
 
 /** 口述錄音轉文字（不含講者標記）；成功後自動整理成計畫，原文保留可修正。 */
-export async function transcribePlanDictation(visitId: string): Promise<void> {
+export function transcribePlanDictation(visitId: string): Promise<void> {
+  return tracked(jobKey(visitId, "dictation"), () => doTranscribe(visitId));
+}
+
+/** 轉出的文字太少（只有「嗯，好。」或靜音時的「謝謝觀看」）：當作沒聽到，不自動整理。 */
+const MIN_DICTATION_CJK = 10;
+export const dictationHasContent = (text: string) => (normalizeDictation(text).match(/[㐀-䶿一-鿿]/g) ?? []).length >= MIN_DICTATION_CJK;
+
+async function doTranscribe(visitId: string): Promise<void> {
   const visit = await db.visits.get(visitId);
   const d = visit?.planDictation;
   if (!visit || !d?.audio) return;
@@ -546,8 +581,9 @@ export async function transcribePlanDictation(visitId: string): Promise<void> {
     const name = d.audio.fileName ?? `plan-${d.id}.${d.audio.mimeType.includes("mp4") ? "m4a" : "webm"}`;
     const t = await withRetry(() => transcribe([{ blob, name }], mode === "local", undefined, "plan"));
     const text = (t.segments.length ? joinSegments(t.segments.map((s) => s.text)) : t.text).trim();
-    if (!text) {
-      await patchDictation(visitId, id, { status: "failed", error: { stage: "dictation", code: "empty", message: NO_CONTENT, retryable: false, at: now() } });
+    if (!dictationHasContent(text)) {
+      // 有字（贅詞、雜音）就留著讓護理師改，不整理成計畫。
+      await patchDictation(visitId, id, { status: "failed", ...(text ? { text, provider: t.provider } : {}), error: { stage: "dictation", code: "empty", message: NO_CONTENT, retryable: false, at: now() } });
       return;
     }
     if (text.length > PLAN_DICTATION_MAX_CHARS) {
@@ -565,8 +601,11 @@ export async function transcribePlanDictation(visitId: string): Promise<void> {
   }
 }
 
-/** 打字或貼上的口述（或修正轉好的文字）：先給護理師看，按「AI 整理成計畫」才整理。 */
-export async function setPlanDictationText(visitId: string, text: string, input?: "typed"): Promise<void> {
+/**
+ * 打字或貼上的口述（或修正轉好的文字）：先給護理師看，按「AI 整理成計畫」才整理。
+ * provider：打字的口述是「typed」，按「填入示範口述」的是「demo」（標示示範口述）；不給時沿用原本的。
+ */
+export async function setPlanDictationText(visitId: string, text: string, input?: "typed", provider?: "typed" | "demo"): Promise<void> {
   const by = await nurseName();
   let old: string | undefined;
   await updateVisit(visitId, (v) => {
@@ -574,9 +613,9 @@ export async function setPlanDictationText(visitId: string, text: string, input?
     // 改用打字取代錄音的口述：換成新的一筆（舊錄音一併刪除）。
     if (!cur || (input === "typed" && cur.input !== "typed")) {
       old = cur?.audio?.blobKey;
-      return { planDeferred: null, planDictation: { id: newId(), input: "typed", audio: null, text, provider: "typed", status: "review", error: null, updatedAt: now(), by } };
+      return { ...undeferPatch(v), planDictation: { id: newId(), input: "typed", audio: null, text, provider: provider ?? "typed", status: "review", error: null, updatedAt: now(), by } };
     }
-    return { planDeferred: null, planDictation: { ...cur, text, status: "review", error: null, updatedAt: now() } };
+    return { ...undeferPatch(v), planDictation: { ...cur, text, ...(provider ? { provider } : {}), status: "review", error: null, updatedAt: now() } };
   });
   if (old) await db.blobs.delete(old);
 }
@@ -594,7 +633,7 @@ export async function polishPlanDictation(visitId: string, opts: { instructions?
   const key = `${visitId}\u0000${visit.planDictation?.id ?? ""}\u0000${JSON.stringify(req)}`;
   const existing = polishing.get(key);
   if (existing) return existing;
-  const job = doPolish(visit, patient, req, opts).finally(() => polishing.delete(key));
+  const job = tracked(jobKey(visitId, "dictation"), () => doPolish(visit, patient, req, opts)).finally(() => polishing.delete(key));
   polishing.set(key, job);
   return job;
 }
@@ -619,6 +658,12 @@ async function doPolish(visit: Visit, patient: Patient, req: PolishPlanRequest, 
   }));
   try {
     const res = await withRetry(() => polishPlan(req, mode === "local"));
+    // 整理期間護理師捨棄或換了口述：這份不採用。
+    const still = await db.visits.get(visitId);
+    if (id && still?.planDictation?.id !== id) {
+      await updateVisit(visitId, (v) => ({ outputs: { ...v.outputs, plan: { ...v.outputs.plan, busy: false } } }));
+      return;
+    }
     await applyVersion(visitId, "plan", res, {
       note: opts.note ?? "依口述整理",
       patientId: patient.id,
@@ -626,7 +671,7 @@ async function doPolish(visit: Visit, patient: Patient, req: PolishPlanRequest, 
       dictationId,
       sourceText: req.dictation,
       explicit: true,
-      patch: (v) => ({ planDeferred: null, ...(id && v.planDictation?.id === id ? { planDictation: { ...v.planDictation, status: "done" as const, error: null, updatedAt: now() } } : {}) }),
+      patch: (v) => ({ ...undeferPatch(v), ...(id && v.planDictation?.id === id ? { planDictation: { ...v.planDictation, status: "done" as const, error: null, updatedAt: now() } } : {}) }),
     });
     // 整理期間被改到其他個案（這份沒有採用）：口述退回待整理，依新個案再整理一次。
     const after = await db.visits.get(visitId);
@@ -650,7 +695,7 @@ export async function discardPlanDictation(visitId: string): Promise<void> {
 /** 護理師明確選擇：依全人評估擬定，或沿用現行計畫並評值。 */
 export async function draftPlanFrom(visitId: string, source: "assessment" | "carried"): Promise<void> {
   await ensurePlanBase(visitId);
-  await updateVisit(visitId, { planDeferred: null });
+  await updateVisit(visitId, undeferPatch);
   await regenerate(visitId, "plan", [], null, source === "assessment" ? "依全人評估擬定" : "沿用現行計畫", { source });
 }
 
@@ -673,8 +718,41 @@ export async function translateEdu(visitId: string, lang: TranslateLang, text: s
   }
 }
 
+/**
+ * 被中斷的背景工作（App 在轉文字、整理或撰寫時被關掉，iPhone 常在背景回收網頁）：
+ * 口述轉文字／整理接著做；卡在「撰寫中」的文件放回可以操作的狀態（有版本→草稿；計畫沒有版本→可擬定；其他→沒有產生成功）。
+ * 只處理這個分頁沒在跑的工作，可以重複呼叫。
+ */
+export async function recoverInterrupted() {
+  const visits = await db.visits
+    .filter((v) => {
+      const d = v.planDictation?.status;
+      return d === "transcribing" || d === "polishing" || KINDS.some((k) => v.outputs[k].status === "writing" || v.outputs[k].busy);
+    })
+    .toArray();
+  for (const v of visits) {
+    const d = v.planDictation;
+    const dictLive = liveJobs.has(jobKey(v.id, "dictation"));
+    if (d && !dictLive && (d.status === "transcribing" || d.status === "polishing")) {
+      if (d.status === "transcribing" && d.audio && !d.text) void transcribePlanDictation(v.id);
+      else if (d.text?.trim()) void polishPlanDictation(v.id);
+      else await patchDictation(v.id, d.id, { status: "failed", error: { stage: "dictation", code: "interrupted", message: "轉文字中斷了，請重新口述或改用打字。", retryable: false, at: now() } });
+    }
+    // 整筆還在處理（或等網路）的由 processVisit 接續。
+    if (v.status === "processing" || v.status === "waiting" || isRunning(v.id)) continue;
+    const reset: DocKind[] = KINDS.filter((k) => (v.outputs[k].status === "writing" || v.outputs[k].busy) && !liveJobs.has(jobKey(v.id, k)) && !(k === "plan" && (dictLive || d?.status === "polishing")));
+    if (!reset.length) continue;
+    await updateVisit(v.id, (cur) => {
+      const outputs = { ...cur.outputs };
+      for (const k of reset) if (!liveJobs.has(jobKey(cur.id, k))) outputs[k] = recoverOutput(cur.outputs[k], k, now());
+      return { outputs };
+    });
+  }
+}
+
 /** App 開啟或恢復連線時，接續所有未完成的處理。 */
 export async function resumePending() {
+  await recoverInterrupted();
   const pending = await db.visits.where("status").anyOf("waiting", "processing").toArray();
   for (const v of pending) void processVisit(v.id);
 }

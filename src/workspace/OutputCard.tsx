@@ -6,7 +6,7 @@ import { Critter, type CritterKind } from "../components/Critter";
 import { useToast } from "../components/Toast";
 import { Button, Pill, RoundButton, Segmented, Spinner, cx } from "../components/ui";
 import { ackWarnings, blockersFor, confirmAndCopy, confirmOnly, decideSuggestion, deferPlan, hasOpenWarnings, markEduCopied, markEduShared, resolveCandidate, type Blocker } from "../lib/actions";
-import { charCount, docBody, docHeader, docTitle, eduShareText, shareToLine, writeClipboard } from "../lib/compose";
+import { charCount, docBody, docHeader, docTitle, eduShareText, planVersionFor, shareToLine, writeClipboard } from "../lib/compose";
 import { TRIAL } from "../lib/env";
 import { clock } from "../lib/format";
 import { useSettings } from "../lib/hooks";
@@ -119,7 +119,8 @@ export function OutputCard({
           <Critter kind={st.critter} size={36} animate={writing} />
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="font-round text-[1.35rem] font-extrabold leading-tight">
+          {/* tabIndex -1：口述交出去之後焦點移到這裡（計畫卡內按過的按鈕已經不在）。 */}
+          <h2 tabIndex={-1} className="font-round text-[1.35rem] font-extrabold leading-tight outline-none">
             {title}
             {kind === "record" && !visit.intakeOnly && <span className="ml-1.5 text-[0.95rem]">本次病摘</span>}
           </h2>
@@ -294,7 +295,7 @@ export function OutputCard({
                   {justCopied ? "已複製 ✓" : confirmed ? `再複製一次${title}` : `確認並複製${title}`}
                 </Button>
               )}
-              {kind === "plan" && !confirmed && <p className="text-center text-[0.9rem] font-bold text-ink-soft">確認後設為第 {(patient.plan?.version ?? 0) + 1} 版</p>}
+              {kind === "plan" && !confirmed && <p className="text-center text-[0.9rem] font-bold text-ink-soft">確認後設為第 {planVersionFor(visit, patient)} 版</p>}
               <Button variant="soft" block icon={<Pencil size={18} />} onClick={() => setEdit(true)} disabled={out.status === "writing"}>
                 修改
               </Button>

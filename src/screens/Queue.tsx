@@ -7,6 +7,7 @@ import { Pill, cx } from "../components/ui";
 import { shortDate, todayStr } from "../lib/format";
 import { useAllVisits, useMedia, usePatients } from "../lib/hooks";
 import type { Patient, Visit } from "../lib/model";
+import { planBadge } from "../lib/planSlot";
 import { visitStatus } from "../lib/status";
 import { Workspace } from "./Workspace";
 
@@ -128,6 +129,7 @@ export function Queue() {
 function Row({ visit, patient, active }: { visit: Visit; patient?: Patient; active: boolean }) {
   const desktop = useMedia("(min-width: 1024px)");
   const st = visitStatus(visit);
+  const badge = planBadge(visit);
   if (!patient) return null;
   return (
     <Link
@@ -143,6 +145,7 @@ function Row({ visit, patient, active }: { visit: Visit; patient?: Patient; acti
         <span className={cx("block text-[0.88rem] font-bold", active ? "opacity-75" : "text-ink-soft")}>
           {visit.date === todayStr() ? "今天" : shortDate(visit.date)} {visit.time ?? ""}
         </span>
+        {badge && <Pill tone="muted" className="mt-1">{badge}</Pill>}
       </span>
       <Pill tone={st.tone} icon={st.tone === "pending" ? undefined : <Critter kind={st.critter} size={16} animate={visit.status === "processing"} />}>
         {st.label}

@@ -19,7 +19,7 @@ import {
   storageErrorMessage,
   storeSummary,
 } from "../lib/actions";
-import { AUDIO_ACCEPT } from "../lib/audioFiles";
+import { AUDIO_ACCEPT, voiceMemoProblem } from "../lib/audioFiles";
 import { TRIAL } from "../lib/env";
 import { bytes } from "../lib/format";
 import type { Patient } from "../lib/model";
@@ -128,7 +128,8 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
     async (files: File[], patient: Patient) => {
       const { audio, docs } = classifyFiles(files);
       if (audio.length + docs.length === 0) {
-        toast("沒有可用的檔案（支援 PDF、照片、錄音檔）");
+        // 選的是錄音但格式不對（語音備忘錄「可編輯」的 .qta）：說明怎麼改，不只說不支援。
+        toast(files.map(voiceMemoProblem).find(Boolean) ?? "沒有可用的檔案（支援 PDF、照片、錄音檔）", { error: true, ms: 5000 });
         return;
       }
       try {

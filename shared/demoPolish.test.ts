@@ -29,6 +29,11 @@ const SAMPLES: [string, Partial<PolishPlanRequest>][] = [
     { hasCurrentPlan: true },
   ],
   ["問題1：疼痛\n他說膝蓋很痛，晚上睡不好\n目標：一週內疼痛降到三分以下\n措施：熱敷，教家屬按摩\n評值：下次訪視問疼痛分數", {}],
+  // 不能改變意思的寫法：她／他指家屬、「更換要」、「雖然後來」
+  ["第一個問題是洗澡。家屬的部分，女兒白天上班，她晚上會幫忙洗澡。", {}],
+  ["第一個問題是用藥。家屬的部分，兒子負責買藥。他每週回來一次。", {}],
+  ["第一個問題是尿管照護。措施是尿管每個月更換，更換要用無菌技術。", {}],
+  ["第一個問題是傷口。措施是雖然後來傷口有變小，還是要每天看傷口。", {}],
 ];
 
 const STRIP = /[\s，。、；：！？,.;:!?「」（）()]/g;
@@ -55,6 +60,17 @@ describe("normalizeDictation", () => {
     expect(normalizeDictation("體溫36.8度,血壓142/86;時間10:30.")).toBe("體溫36.8度，血壓142/86；時間10:30。");
     expect(normalizeDictation("他們很配合。他說\r\n她們  會 幫忙")).toBe("他們很配合。個案說\n她們 會 幫忙");
     expect(normalizeDictation("驗雪糖，就是說要記錄")).toBe("驗血糖，要記錄");
+  });
+});
+
+describe("normalizeDictation：不改變意思", () => {
+  it("她／他指家屬時不改成「個案」；「更換要」不是換藥；「雖然後來」「不然後果」「當然後續」不是贅詞", () => {
+    expect(normalizeDictation("家屬的部分，女兒白天上班，她晚上會幫忙洗澡。")).toBe("家屬的部分，女兒白天上班，她晚上會幫忙洗澡。");
+    expect(normalizeDictation("家屬的部分，兒子負責買藥。他每週回來一次。")).toBe("家屬的部分，兒子負責買藥。他每週回來一次。");
+    // 新的護理問題開頭：上一句的家屬不算
+    expect(normalizeDictation("教先生驗血糖。第三個問題是有跌倒的危險，她走路要扶助行器。")).toBe("教先生驗血糖。第三個問題是有跌倒的危險，個案走路要扶助行器。");
+    expect(normalizeDictation("尿管每個月更換，更換要用無菌技術，換要每天。")).toBe("尿管每個月更換，更換要用無菌技術，換藥每天。");
+    expect(normalizeDictation("雖然後來傷口有變小，不然後果很嚴重，當然後續要追蹤，然後要每天看傷口。")).toBe("雖然後來傷口有變小，不然後果很嚴重，當然後續要追蹤，要每天看傷口。");
   });
 });
 
@@ -103,6 +119,31 @@ describe("demoPolishPlan：示範口述（高○珍）", () => {
   });
 });
 
+describe("demoPolishPlan：口語的問題開頭、家屬稱呼與個資", () => {
+  it("「好，那第二個問題是」「再來第二個問題是」「另外還有一個問題是」都是新的問題，目標與措施不併到上一題", () => {
+    const a = bodyOf(
+      localPolishPlan(req("第一個問題是皮膚完整性受損，左腳背有傷口。目標是兩個禮拜內傷口縮小。措施是每次訪視換藥。好，那第二個問題是營養不足，體重一直掉。目標是一個月內體重不要再掉。措施是灌食一天六餐，每餐兩百五十西西。")).doc.sections,
+      PLAN_HEADINGS[2],
+    );
+    expect(a).toBe(
+      "問題 1：皮膚完整性受損（本次新增）\n　依據：左腳背有傷口。\n　目標：兩個禮拜內傷口縮小。\n　措施：(1) 每次訪視換藥。\n問題 2：營養不足（本次新增）\n　依據：體重一直掉。\n　目標：一個月內體重不要再掉。\n　措施：(1) 灌食一天六餐。(2) 每餐兩百五十西西。",
+    );
+    const { doc, warnings } = localPolishPlan(req("第一個問題是吞嚥困難。措施是吃東西要坐起來。再來第二個問題是便秘，三天沒解。目標是三天內解便。另外還有一個問題是失眠。措施是白天多活動。"));
+    expect(bodyOf(doc.sections, PLAN_HEADINGS[2]).split("\n").filter((l) => l.startsWith("問題"))).toEqual(["問題 1：吞嚥困難（本次新增）", "問題 2：便秘（本次新增）", "問題 3：失眠（本次新增）"]);
+    expect(bodyOf(doc.sections, PLAN_HEADINGS[2])).toContain("問題 2：便秘（本次新增）\n　依據：三天沒解。\n　目標：三天內解便。");
+    expect(warnings).toEqual([]);
+  });
+
+  it("本機整理與伺服器相同：家屬對個案的稱呼改成「個案」，電話遮蔽並提醒", () => {
+    const { doc, warnings } = localPolishPlan(req("第一個問題是有跌倒的危險，阿嬤走路要扶助行器。措施是晚上留小夜燈。家屬的部分，有事打女兒電話0912345678。", { familyCallsAs: "阿嬤" }));
+    const all = doc.sections.map((s) => s.body).join("\n");
+    expect(all).toContain("個案走路要扶助行器");
+    expect(all).not.toMatch(/阿嬤|0912345678/);
+    expect(all).toContain("〔已遮蔽〕");
+    expect(warnings).toContain("護理計畫出現疑似手機號碼，已遮蔽。");
+  });
+});
+
 describe("demoPolishPlan：只輸出口述的片段", () => {
   it.each([[DEMO_PLAN_DICTATION_TEXT, {}] as [string, Partial<PolishPlanRequest>], ...SAMPLES])("每個片段都在正規化後的口述中：%s", (text, over) => {
     const source = normalizeDictation(text).replace(STRIP, "");
@@ -110,7 +151,7 @@ describe("demoPolishPlan：只輸出口述的片段", () => {
     const frags = fragments(sections);
     expect(frags.length).toBeGreaterThan(0);
     for (const f of frags) expect(source, f).toContain(f);
-    expect(sections.map((s) => s.body).join("\n")).not.toMatch(/嗯|呃|然後/);
+    expect(sections.map((s) => s.body).join("\n")).not.toMatch(/嗯|呃|(?<![雖不當])然後(?![果續])/);
   });
 
   it("e2e 打字口述：目標與措施分開，家屬與下次訪視各自歸段", () => {

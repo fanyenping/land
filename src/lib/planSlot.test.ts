@@ -5,6 +5,7 @@ import type { OutputVersion, Patient, Visit } from "./model";
 import { newVisit } from "./pipeline";
 import {
   assessmentComplete,
+  autoPlanStale,
   changesOpen,
   hasUnverified,
   includedKinds,
@@ -15,6 +16,8 @@ import {
   planCopyable,
   planExcludedReason,
   planSlot,
+  recoverOutput,
+  undeferPatch,
   visitComplete,
 } from "./planSlot";
 
@@ -214,6 +217,45 @@ describe("includedKinds and visitComplete", () => {
     expect(visitComplete(withDoc(confirmedRecord, "edu", "confirmed"))).toBe(true);
     expect(visitComplete(withDoc(visit("follow"), "record", "draft"))).toBe(false);
     expect(visitComplete(visit("follow"))).toBe(false);
+  });
+
+  it("a plan or edu whose first version is still being written is not「none」", () => {
+    const writing = (v: Visit, kind: DocKind): Visit => ({ ...v, outputs: { ...v.outputs, [kind]: { ...v.outputs[kind], status: "writing", busy: true } } });
+    expect(visitComplete(writing(confirmedRecord, "plan"))).toBe(false);
+    expect(visitComplete(writing(confirmedRecord, "edu"))).toBe(false);
+    // 本次不擬：計畫還在寫也算完成（寫好的那份不採用）
+    expect(visitComplete({ ...writing(confirmedRecord, "plan"), planDeferred: { by: "林", at: "x" } })).toBe(true);
+  });
+});
+
+describe("undeferPatch, autoPlanStale, recoverOutput", () => {
+  const deferred = { by: "林", at: "2026-10-03T03:00:00Z" };
+  const doneRecord = { ...withDoc(visit("follow"), "record", "confirmed"), status: "done" as const, completedAt: "2026-10-03T04:00:00Z", planDeferred: deferred };
+
+  it("clearing a deferral reopens a done visit only when it is no longer complete", () => {
+    expect(undeferPatch(withDoc(doneRecord, "plan", "draft"))).toEqual({ planDeferred: null, status: "review", completedAt: null });
+    expect(undeferPatch(doneRecord)).toEqual({ planDeferred: null });
+    expect(undeferPatch(withDoc(doneRecord, "plan", "confirmed"))).toEqual({ planDeferred: null });
+    expect(undeferPatch(visit("follow"))).toEqual({});
+  });
+
+  it("an automatic plan result is stale once the nurse dictated, switched source or deferred", () => {
+    expect(autoPlanStale(visit("follow"), "carried")).toBe(false);
+    expect(autoPlanStale(visit("follow", { planSource: "carried" }), "carried")).toBe(false);
+    expect(autoPlanStale(visit("follow", { planSource: "dictation" }), "carried")).toBe(true);
+    expect(autoPlanStale(visit("follow", { planSource: "assessment" }), "carried")).toBe(true);
+    expect(autoPlanStale(visit("follow", { planDeferred: deferred }), "assessment")).toBe(true);
+  });
+
+  it("an interrupted write goes back to something the nurse can act on", () => {
+    const empty = visit("follow").outputs.plan;
+    const at = "2026-10-03T05:00:00Z";
+    expect(recoverOutput({ ...empty, status: "writing", busy: true }, "plan", at)).toMatchObject({ status: "idle", busy: false, error: null });
+    expect(recoverOutput({ ...empty, status: "writing", busy: true }, "record", at)).toMatchObject({ status: "failed", busy: false, error: { code: "interrupted", retryable: true } });
+    const drafted = withDoc(visit("follow"), "plan", "writing", {}, { busy: true }).outputs.plan;
+    expect(recoverOutput(drafted, "plan", at)).toMatchObject({ status: "draft", busy: false });
+    const confirmedBusy = withDoc(visit("follow"), "record", "confirmed", {}, { busy: true }).outputs.record;
+    expect(recoverOutput(confirmedBusy, "record", at)).toMatchObject({ status: "confirmed", busy: false });
   });
 });
 

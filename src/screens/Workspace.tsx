@@ -10,7 +10,7 @@ import { Sheet } from "../components/Sheet";
 import { useToast } from "../components/Toast";
 import { VitalsSheet } from "../components/VitalsSheet";
 import { Button, Pill, RoundButton, cx } from "../components/ui";
-import { ackWarnings, addMaterial, blockersFor, confirmAll, confirmAndCopy, deleteVisit, setVisitKind, storageErrorMessage, storeSummary, type Blocker } from "../lib/actions";
+import { ackWarnings, addMaterial, blockersFor, confirmAll, confirmAndCopy, confirmIdentity, deleteVisit, setVisitKind, storageErrorMessage, storeSummary, type Blocker } from "../lib/actions";
 import { isDemoEngine } from "../lib/api";
 import { AUDIO_ACCEPT } from "../lib/audioFiles";
 import { docTitle } from "../lib/compose";
@@ -220,7 +220,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
           {/* 電腦版按鈕列沒有底色：說明自帶底色，不疊在下面的文字上。 */}
           <span className="inline-flex flex-wrap items-center justify-center gap-x-2 rounded-full bg-paper/90 px-3 text-[0.9rem] font-bold text-ink-soft backdrop-blur-md">
             {planReason}・這次不含
-            <button type="button" onClick={() => jump("sec-plan")} className="min-h-[36px] font-extrabold text-ink underline underline-offset-4">
+            <button type="button" onClick={() => jump("sec-plan")} className="min-h-[44px] font-extrabold text-ink underline underline-offset-4">
               前往計畫
             </button>
           </span>
@@ -367,7 +367,9 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
                   .map((b) => (b.key ? VITAL_LABEL[b.key] : b.label))
                   .join("、")}`
               : blocked?.kind === "all"
-                ? "全部確認並複製"
+                ? available.length < 3
+                  ? `確認並複製 ${available.length} 份`
+                  : "全部確認並複製"
                 : `確認並複製${blocked ? docTitle(blocked.kind as DocKind, settings) : ""}`}
           </Button>
         }
@@ -382,7 +384,12 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
             }}
           />
         )}
-        <ReviewBlock visit={visit} patient={patient} onEditVital={(k) => setVitalsOpen({ focus: k })} bare />
+        {/* 口述的計畫不看數值、異動與文件：只顯示它真的要處理的（身分）。 */}
+        {blocked?.kind === "plan" && visit.planSource === "dictation" ? (
+          blockersFor(visit, "plan").some((b) => b.kind === "identity") && <IdentityCheck visit={visit} patient={patient} />
+        ) : (
+          <ReviewBlock visit={visit} patient={patient} onEditVital={(k) => setVitalsOpen({ focus: k })} bare />
+        )}
       </Sheet>
 
       <ActionSheet
@@ -421,6 +428,22 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
           },
         ]}
       />
+    </div>
+  );
+}
+
+/** 確認個案身分（口述計畫的關卡只有這一項來自「先看這裡」）。 */
+function IdentityCheck({ visit, patient }: { visit: Visit; patient: Patient }) {
+  const flows = useFlows();
+  return (
+    <div className="rounded-[22px] bg-card p-4 outline-ink">
+      <p className="font-bold">{visit.analysis?.identityConcern}</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button variant="primary" onClick={() => confirmIdentity(visit.id)}>
+          是 <Name name={patient.name} />
+        </Button>
+        <Button onClick={() => flows.moveTo(visit.id, patient.id)}>改到其他個案</Button>
+      </div>
     </div>
   );
 }

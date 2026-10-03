@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { ASSESSMENT_FORMS, type HolisticAssessment } from "../assessment/forms";
 import type { Analysis } from "../../shared/types";
 import { DEFAULT_SETTINGS, type Patient, type Visit } from "./model";
-import { buildGenerateRequest, buildPolishRequest, newVisit } from "./pipeline";
+import { DEMO_PLAN_DICTATION_TEXT } from "../../shared/demoTranscript";
+import { buildGenerateRequest, buildPolishRequest, dictationHasContent, newVisit } from "./pipeline";
 
 const SENTINEL = "口述計畫哨兵";
 const BASE = { version: 2, text: "問題 1：跌倒高危險群（沿用）", confirmedAt: "2026-09-19T03:00:00Z", by: "林護理師" };
@@ -152,5 +153,17 @@ describe("buildPolishRequest", () => {
     expect(req.familyCallsAs).toBeNull();
     expect(req.options.instructions).toHaveLength(5);
     expect(req.options.custom).toHaveLength(500);
+  });
+});
+
+describe("dictationHasContent", () => {
+  it("fillers, noise or a silence hallucination are not dictation; a real dictation is", () => {
+    expect(dictationHasContent("")).toBe(false);
+    expect(dictationHasContent("嗯，好。")).toBe(false);
+    expect(dictationHasContent("謝謝觀看")).toBe(false);
+    expect(dictationHasContent("Thank you for watching.")).toBe(false);
+    expect(dictationHasContent("嗯，那個，就是說，對啊。")).toBe(false);
+    expect(dictationHasContent("問題一便秘，措施多喝水。")).toBe(true);
+    expect(dictationHasContent(DEMO_PLAN_DICTATION_TEXT)).toBe(true);
   });
 });

@@ -9,7 +9,7 @@ import { callStructured } from "./claude";
 import { MODEL, hasCredentials } from "./client";
 import { PLAN_POLISH } from "./prompts";
 import { DocOutputSchema } from "./schemas";
-import { PII, polishText, toTraditionalSafe } from "./validate";
+import { polishText, toTraditionalSafe } from "./validate";
 
 export function buildPolishText(req: PolishPlanRequest): string {
   const version = req.hasCurrentPlan ? "已有現行計畫（口述說沿用的問題才標沿用）" : "第 1 版（問題一律標本次新增）";
@@ -42,21 +42,8 @@ export async function polishPlan(req: PolishPlanRequest, signal?: AbortSignal): 
     meta = { mode: "claude", model: model ?? MODEL, promptVersion: POLISH_PROMPT_VERSION };
   }
 
-  // 繁體、格式、家屬稱呼改「個案」、個資遮蔽
-  const warnings: string[] = [];
-  const name = req.familyCallsAs?.trim() ?? "";
-  const sections = raw.map((s) => {
-    let body = polishText(toTraditionalSafe(s.body ?? ""));
-    if (name.length >= 2) body = body.replaceAll(name, "個案");
-    for (const [re, what] of PII) {
-      re.lastIndex = 0;
-      if (re.test(body)) warnings.push(`護理計畫出現疑似${what}，已遮蔽。`);
-      body = body.replace(re, "〔已遮蔽〕");
-    }
-    return { heading: toTraditionalSafe(s.heading ?? ""), body };
-  });
-
-  const { doc, warnings: checks } = finalizePolishedPlanCore({ sections }, { ...req, dictation });
-  const all = [...new Set([...warnings, ...checks])];
-  return { doc, meta, ...(all.length ? { warnings: all } : {}) };
+  // 繁體與格式（伺服器限定：OpenCC 只在 Node）；家屬稱呼改「個案」、個資遮蔽與對照檢查在共用收尾（本機／試用版也一樣）
+  const sections = raw.map((s) => ({ heading: toTraditionalSafe(s.heading ?? ""), body: polishText(toTraditionalSafe(s.body ?? "")) }));
+  const { doc, warnings } = finalizePolishedPlanCore({ sections }, { ...req, dictation });
+  return { doc, meta, ...(warnings.length ? { warnings } : {}) };
 }

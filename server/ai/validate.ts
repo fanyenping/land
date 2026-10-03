@@ -4,6 +4,7 @@
  */
 import * as OpenCC from "opencc-js/cn2t";
 import { assessmentBasisLabel, assessmentForWriting } from "../../shared/assessment";
+import { PII } from "../../shared/pii";
 import {
   abnormalValuesLine,
   ensureIds,
@@ -447,11 +448,8 @@ const BOUNDARY: [RegExp, string][] = [
   [/(?:高|中|低)(?:度)?風險/, "風險分級"],
 ];
 
-export const PII: [RegExp, string][] = [
-  [/\b[A-Z][12]\d{8}\b/g, "身分證字號"],
-  [/(?<!\d)09\d{2}[-\s]?\d{3}[-\s]?\d{3}(?!\d)/g, "手機號碼"],
-  [/(?<![\d/])0\d{1,2}-\d{3,4}-\d{4}(?!\d)/g, "電話號碼"],
-];
+// 個資樣式與口述計畫的收尾共用（shared/pii.ts）。
+export { PII };
 
 /* ============================== 撰寫輸出檢核 ============================== */
 

@@ -19,6 +19,9 @@ export interface DictSnapshot {
   nearLimit: boolean;
 }
 
+/** 自動收尾的原因：滿 8 分鐘，或被系統中斷（來電、其他 App 搶麥克風）。 */
+export type DictEndReason = "limit" | "interrupted";
+
 export interface DictResult {
   blob: Blob;
   mimeType: string;
@@ -51,7 +54,7 @@ class Dictation {
   private stopping: Promise<DictResult | null> | null = null;
   private resolveStop: ((r: DictResult | null) => void) | null = null;
   private discard = false;
-  private onLimit: (() => void) | undefined;
+  private onLimit: ((reason: DictEndReason) => void) | undefined;
   private limitHit = false;
   /** 到上限但沒有人接手時，先停下來的結果（下一次 stop() 拿走）。 */
   private pending: DictResult | null = null;
@@ -75,7 +78,7 @@ class Dictation {
   }
 
   /** 開始口述；連點兩次只會啟動一次。失敗時 state 為 error、回傳 false。 */
-  start(visitId: string, opts?: { onLimit?: () => void }): Promise<boolean> {
+  start(visitId: string, opts?: { onLimit?: (reason: DictEndReason) => void }): Promise<boolean> {
     if (this.starting) return this.starting;
     this.starting = this.doStart(visitId, opts).finally(() => {
       this.starting = null;
@@ -88,7 +91,7 @@ class Dictation {
     return false;
   }
 
-  private async doStart(visitId: string, opts?: { onLimit?: () => void }): Promise<boolean> {
+  private async doStart(visitId: string, opts?: { onLimit?: (reason: DictEndReason) => void }): Promise<boolean> {
     if (this.snap.state === "recording") {
       if (this.snap.visitId === visitId) return true;
       return this.fail(visitId, "另一筆口述還在錄音，請先完成那一筆。");
@@ -139,7 +142,7 @@ class Dictation {
     this.media.onstop = () => this.finalize();
     // 被系統中斷（來電、其他 App 搶麥克風）：保留已錄的內容，交給上限同樣的流程整理。
     this.stream.getAudioTracks()[0]?.addEventListener("ended", () => {
-      if (this.snap.state === "recording" && !this.stopping) this.reachLimit();
+      if (this.snap.state === "recording" && !this.stopping) this.reachLimit("interrupted");
     });
     this.media.start(1000);
     this.runStart = performance.now();
@@ -200,10 +203,10 @@ class Dictation {
     else this.pending = result;
   }
 
-  private reachLimit() {
+  private reachLimit(reason: DictEndReason) {
     if (this.limitHit) return;
     this.limitHit = true;
-    if (this.onLimit) this.onLimit();
+    if (this.onLimit) this.onLimit(reason);
     // 沒有人接手：先停下來，結果留給下一次 stop()。
     else void this.stop().then((r) => {
       this.pending = r;
@@ -238,7 +241,7 @@ class Dictation {
       }
       const elapsedMs = performance.now() - this.runStart;
       this.set({ level, elapsedMs, nearLimit: elapsedMs >= DICTATION_MAX_MS - 60_000 });
-      if (elapsedMs >= DICTATION_MAX_MS) this.reachLimit();
+      if (elapsedMs >= DICTATION_MAX_MS) this.reachLimit("limit");
     }, 100);
   }
 

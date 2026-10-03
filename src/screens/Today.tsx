@@ -43,7 +43,8 @@ export function Today() {
   const waitingReview = todays.filter((v) => v.status === "review" || v.status === "failed" || v.status === "interrupted");
   const active = todays.filter((v) => v.status !== "done");
   // 主卡先列還沒訪視的人，和下方清單順序一致。
-  const firstNames = [...active, ...done].slice(0, 3).map((v) => byId.get(v.patientId)).filter(Boolean) as Patient[];
+  // 同一位今天可能有兩筆（例如完成後又匯入語音備忘錄）：名字只列一次。
+  const firstNames = [...new Set([...active, ...done].map((v) => v.patientId))].slice(0, 3).map((id) => byId.get(id)).filter(Boolean) as Patient[];
   const offline = !TRIAL && !online;
   const aiNote = aiStatus.tone === "demo" || aiStatus.tone === "off";
 
@@ -334,10 +335,13 @@ function DoneRow({ visit, patient }: { visit: Visit; patient: Patient }) {
     <Link to={`/v/${visit.id}`} className="flex min-h-[64px] items-center gap-3 rounded-[22px] bg-card/70 px-4 py-2 opacity-90 outline-ink">
       <Critter kind="done" size={34} />
       {visit.time && <span className="num font-extrabold text-ink-soft">{visit.time}</span>}
-      <span className="min-w-0 flex-1 truncate text-[1.1rem] font-extrabold">
-        <Name name={patient.name} />
+      {/* 計畫標示放在名字下面：手機寬度下名字不被擠掉。 */}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[1.1rem] font-extrabold">
+          <Name name={patient.name} />
+        </span>
+        {badge && <Pill tone="muted" className="mt-1">{badge}</Pill>}
       </span>
-      {badge && <Pill tone="muted">{badge}</Pill>}
       <Pill tone="ok">已完成</Pill>
       <ChevronRight size={18} className="text-ink-faint" />
     </Link>

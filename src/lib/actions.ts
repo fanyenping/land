@@ -3,11 +3,11 @@ import { allDocsText, docBody, docCopyText, docHeader, writeClipboard } from "./
 import { db, deleteVisitDeep, getSettings, putBlob, updatePatient, updateVisit, type StoredBlob } from "./db";
 import { addDays, todayStr } from "./format";
 import { CONSENT_VERSION, newId, type AudioPart, type OutputState, type Patient, type Settings, type Visit, type VisitDocument } from "./model";
-import { isRunning, newVisit, processVisit, regenerate, reprocessWithNewMaterial, savePlanDictationAudio, scheduleVitalsRefresh } from "./pipeline";
+import { ensurePlanBase, isRunning, newVisit, processVisit, regenerate, reprocessWithNewMaterial, savePlanDictationAudio, scheduleVitalsRefresh } from "./pipeline";
 import { audioDuration, recorder } from "./recorder";
 import { isAudioFile, voiceMemoProblem, withAudioMime } from "./audioFiles";
-import { dictation } from "./dictation";
-import { changesOpen, hasUnverified, includedKinds, openWarnings, visitComplete } from "./planSlot";
+import { dictation, type DictEndReason } from "./dictation";
+import { changesOpen, hasUnverified, includedKinds, openWarnings, undeferPatch, visitComplete } from "./planSlot";
 import { confirmedVitalList, pendingVitals } from "./vitals";
 
 const nowIso = () => new Date().toISOString();
@@ -574,6 +574,8 @@ export async function ackWarnings(visitId: string, kind: DocKind) {
 async function markConfirmed(visitId: string, kind: DocKind, extra: { copied?: boolean; shared?: boolean }) {
   const by = await confirmer();
   const at = nowIso();
+  // 個案的現行計畫要換成這次的版本：先記下「這次訪視前」的計畫（沿用第幾版、送給 AI 的現行計畫都以它為準）。
+  if (kind === "plan") await ensurePlanBase(visitId);
   const visit = await db.visits.get(visitId);
   if (!visit) return;
   const patient = await db.patients.get(visit.patientId);
@@ -608,8 +610,8 @@ async function markConfirmed(visitId: string, kind: DocKind, extra: { copied?: b
       },
     };
     const planDeferred = kind === "plan" ? null : v.planDeferred;
-    // 完成：紀錄確認；衛教沒有或已確認；計畫沒有、已確認或本次不擬。
-    const allDone = visitComplete({ ...v, outputs, planDeferred });
+    // 完成：紀錄確認；衛教沒有或已確認；計畫沒有、已確認或本次不擬。還在整理（處理中、等網路）時由整理結束時決定。
+    const allDone = visitComplete({ ...v, outputs, planDeferred }) && v.status !== "processing" && v.status !== "waiting";
     return {
       outputs,
       ...(kind === "plan" ? { planDeferred: null } : {}),
@@ -696,12 +698,12 @@ export async function markEduCopied(visitId: string) {
 /* ----------------------------- 護理計畫：口述與本次不擬 ----------------------------- */
 
 /** 開始口述護理計畫（訪視錄音進行中、試用版或不支援錄音時回傳說明）。滿 8 分鐘自動收好並整理。 */
-export async function startPlanDictation(visitId: string, opts?: { onLimit?: () => void }): Promise<{ ok: true } | { ok: false; message: string }> {
+export async function startPlanDictation(visitId: string, opts?: { onLimit?: (reason: DictEndReason) => void }): Promise<{ ok: true } | { ok: false; message: string }> {
   const snap = dictation.getSnapshot();
   if ((snap.state === "recording" || snap.state === "starting") && snap.visitId !== visitId) await finishPlanDictation(snap.visitId);
   const ok = await dictation.start(visitId, {
-    onLimit: () => {
-      void finishPlanDictation(visitId).then(() => opts?.onLimit?.());
+    onLimit: (reason) => {
+      void finishPlanDictation(visitId).then(() => opts?.onLimit?.(reason));
     },
   });
   if (ok) return { ok: true };
@@ -736,7 +738,7 @@ export async function deferPlan(visitId: string) {
   let complete = false;
   await updateVisit(visitId, (v) => {
     const next: Visit = { ...v, planDeferred: { by, at } };
-    complete = visitComplete(next) && v.status !== "done";
+    complete = visitComplete(next) && v.status !== "done" && v.status !== "processing" && v.status !== "waiting";
     return { planDeferred: next.planDeferred, ...(complete ? { status: "done" as const, completedAt: at } : {}) };
   });
   if (complete) await updateLast(visitId);
@@ -744,11 +746,7 @@ export async function deferPlan(visitId: string) {
 
 /** 恢復擬計畫：已完成的訪視若因此還沒完成，退回待確認。 */
 export async function resumePlan(visitId: string) {
-  await updateVisit(visitId, (v) => {
-    const next: Visit = { ...v, planDeferred: null };
-    const reopen = v.status === "done" && !visitComplete(next);
-    return { planDeferred: null, ...(reopen ? { status: "review" as const, completedAt: null } : {}) };
-  });
+  await updateVisit(visitId, undeferPatch);
 }
 
 /* ----------------------------- 版本 ----------------------------- */

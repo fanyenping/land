@@ -75,10 +75,33 @@ export function includedKinds(v: Visit): DocKind[] {
   return kinds;
 }
 
-/** 這次訪視完成：紀錄已確認；衛教沒有或已確認；計畫沒有、已確認或本次不擬。 */
+/** 這份沒有內容（第一版還在撰寫中的不算沒有）。 */
+const none = (o: OutputState) => o.versions.length === 0 && o.status !== "writing";
+
+/** 這次訪視完成：紀錄已確認；衛教沒有或已確認；計畫沒有、已確認或本次不擬（第一版還在寫的計畫或衛教要等）。 */
 export function visitComplete(v: Visit): boolean {
   const { record, plan, edu } = v.outputs;
-  return record.status === "confirmed" && (edu.versions.length === 0 || edu.status === "confirmed") && (plan.versions.length === 0 || plan.status === "confirmed" || !!v.planDeferred);
+  return record.status === "confirmed" && (none(edu) || edu.status === "confirmed") && (none(plan) || plan.status === "confirmed" || !!v.planDeferred);
+}
+
+/** 系統自動寫的計畫（依全人評估／沿用）寫好時：護理師已改用口述、換了來源或本次不擬，這份不採用。 */
+export function autoPlanStale(v: Visit, source: PlanMode): boolean {
+  return !!v.planDeferred || (!!v.planSource && v.planSource !== source);
+}
+
+/** 被中斷的撰寫（App 在寫的時候被關掉）放回可以操作的狀態：有版本→草稿；計畫沒有版本→可擬定；其他→沒有產生成功（可重試）。 */
+export function recoverOutput(out: OutputState, kind: DocKind, at: string): OutputState {
+  if (out.status !== "writing") return { ...out, busy: false };
+  if (out.versions.length) return { ...out, status: "draft", busy: false, error: null };
+  if (kind === "plan") return { ...out, status: "idle", busy: false, error: null };
+  return { ...out, status: "failed", busy: false, error: { stage: kind, code: "interrupted", message: "撰寫中斷了，請按「重試這份」。", retryable: true, at } };
+}
+
+/** 取消「本次不擬計畫」要一起寫入的欄位：已完成的訪視因此還沒完成時，退回待確認。 */
+export function undeferPatch(v: Visit): Partial<Pick<Visit, "planDeferred" | "status" | "completedAt">> {
+  if (!v.planDeferred) return {};
+  const reopen = v.status === "done" && !visitComplete({ ...v, planDeferred: null });
+  return { planDeferred: null, ...(reopen ? { status: "review" as const, completedAt: null } : {}) };
 }
 
 /** 計畫這次不含在全部複製／導出的原因；包含時為 null。 */

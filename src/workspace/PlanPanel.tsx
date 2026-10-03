@@ -5,7 +5,7 @@ import { DEMO_PLAN_DICTATION_TEXT } from "../../shared/demoTranscript";
 import { PLAN_DICTATION_MAX_CHARS } from "../../shared/planPolish";
 import { Sheet } from "../components/Sheet";
 import { useToast } from "../components/Toast";
-import { VoiceMemoGuideSheet } from "../components/VoiceMemoGuide";
+import { VoiceMemoGuideContent, VoiceMemoGuideSheet } from "../components/VoiceMemoGuide";
 import { Button, Pill, Spinner, cx } from "../components/ui";
 import { addMaterial, cancelPlanDictation, deferPlan, finishPlanDictation, resumePlan, startPlanDictation, storageErrorMessage, storeSummary } from "../lib/actions";
 import { AUDIO_ACCEPT, PLAN_AUDIO_MAX_BYTES, isAudioFile, voiceMemoProblem } from "../lib/audioFiles";
@@ -15,7 +15,7 @@ import { TRIAL } from "../lib/env";
 import { clock } from "../lib/format";
 import { useDictation, useSettings } from "../lib/hooks";
 import type { OutputVersion, Patient, Visit } from "../lib/model";
-import { discardPlanDictation, draftPlanFrom, polishPlanDictation, regenerate, savePlanDictationAudio, setPlanDictationText, transcribePlanDictation } from "../lib/pipeline";
+import { dictationHasContent, discardPlanDictation, draftPlanFrom, polishPlanDictation, regenerate, savePlanDictationAudio, setPlanDictationText, transcribePlanDictation } from "../lib/pipeline";
 import { planBaseFor, planSlot } from "../lib/planSlot";
 import { audioDuration } from "../lib/recorder";
 
@@ -26,10 +26,15 @@ import { audioDuration } from "../lib/recorder";
 
 /** 超過 10 分鐘的錄音比較像整段訪視錄音：先問要不要改當訪視錄音。 */
 const LONG_FILE_MS = 10 * 60_000;
-const MIN_CHARS = 10;
 const TOO_BIG = "這段錄音太大（口述上限 50 MB），整段訪視錄音請用「選錄音檔」加入護理紀錄";
 
 const linkClass = "inline-flex min-h-[44px] items-center font-bold underline underline-offset-4";
+/** 計畫欄位的次要按鈕（size="sm"）也要 44 px 高，手指點得到。 */
+const tap = "min-h-[44px]!";
+/** 轉文字或整理等這麼久還沒好：給「改用打字／捨棄」的出口（App 被關掉的工作會自動接續，這是網路卡住時用）。 */
+const STALE_MS = 2 * 60_000;
+/** 窄螢幕＋大字時按鈕文字換行，不截成「口述護理…」。 */
+const wrap = "[&>span]:whitespace-normal";
 const textareaClass =
   "w-full resize-y rounded-2xl bg-card p-3 text-[1.08rem] leading-[1.7] text-ink outline-ink placeholder:text-ink-faint focus:outline-none focus:shadow-[inset_0_0_0_3px_var(--ink)]!";
 
@@ -58,6 +63,24 @@ function useFinishOnLeave(visitId: string) {
       }, 400);
     };
   }, [visitId]);
+}
+
+/** 某個時間點已經過了 ms（時間到自動重畫）。 */
+function useOlderThan(iso: string | null | undefined, ms: number) {
+  const [, tick] = useState(0);
+  const age = iso ? Date.now() - Date.parse(iso) : 0;
+  const old = !!iso && age >= ms;
+  useEffect(() => {
+    if (!iso || old) return;
+    const t = setTimeout(() => tick((n) => n + 1), ms - age + 50);
+    return () => clearTimeout(t);
+  }, [iso, old, ms, age]);
+  return old;
+}
+
+/** 口述交出去之後（整理、完成口述）：焦點移到計畫卡標題，讀螢幕軟體不會跳回頁首（狀態由 aria-live 唸）。 */
+function focusPlanCard() {
+  setTimeout(() => document.querySelector<HTMLElement>("#sec-plan h2")?.focus({ preventScroll: true }), 80);
 }
 
 function mss(ms: number) {
@@ -119,7 +142,7 @@ function Banner({ children, actions, hint, tone = "bg-pdf-tint" }: { children: R
   );
 }
 
-const linkButton = "sticker inline-flex min-h-[42px] items-center rounded-full bg-card px-4 text-[0.92rem] font-bold text-ink";
+const linkButton = "sticker inline-flex min-h-[44px] items-center rounded-full bg-card px-4 text-[0.92rem] font-bold text-ink";
 
 /** 計畫卡內的計畫來源區：待口述、口述進行中、可擬定、評估有更新、沿用中、本次不擬。 */
 export function PlanPanel({ visit, patient }: { visit: Visit; patient: Patient }) {
@@ -147,7 +170,7 @@ export function PlanPanel({ visit, patient }: { visit: Visit; patient: Patient }
   let body: ReactNode = null;
   if (slot.mode === "deferred") {
     body = (
-      <Banner tone="bg-ink/[0.06]" actions={<Button size="sm" onClick={() => resumePlan(visit.id)}>恢復</Button>}>
+      <Banner tone="bg-ink/[0.06]" actions={<Button size="sm" className={tap} onClick={() => resumePlan(visit.id)}>恢復</Button>}>
         本次不擬計畫・{visit.planDeferred?.by ?? ""} {clock(visit.planDeferred?.at)}
       </Banner>
     );
@@ -167,10 +190,10 @@ export function PlanPanel({ visit, patient }: { visit: Visit; patient: Patient }
           <Banner
             actions={
               <>
-                <Button size="sm" variant="primary" disabled={!canDraft} onClick={() => draft("assessment")}>
+                <Button size="sm" className={tap} variant="primary" disabled={!canDraft} onClick={() => draft("assessment")}>
                   依全人評估擬定
                 </Button>
-                <Button size="sm" icon={<Mic size={16} />} onClick={() => setSheet(true)}>
+                <Button size="sm" className={tap} icon={<Mic size={16} />} onClick={() => setSheet(true)}>
                   改用口述
                 </Button>
               </>
@@ -182,10 +205,10 @@ export function PlanPanel({ visit, patient }: { visit: Visit; patient: Patient }
           <Banner
             actions={
               <>
-                <Button size="sm" variant="primary" disabled={!canDraft} onClick={() => draft("carried")}>
+                <Button size="sm" className={tap} variant="primary" disabled={!canDraft} onClick={() => draft("carried")}>
                   沿用並評值
                 </Button>
-                <Button size="sm" icon={<Mic size={16} />} onClick={() => setSheet(true)}>
+                <Button size="sm" className={tap} icon={<Mic size={16} />} onClick={() => setSheet(true)}>
                   改用口述
                 </Button>
               </>
@@ -202,6 +225,7 @@ export function PlanPanel({ visit, patient }: { visit: Visit; patient: Patient }
           actions={
             <Button
               size="sm"
+              className={tap}
               variant="primary"
               disabled={!canDraft}
               onClick={() => {
@@ -223,7 +247,7 @@ export function PlanPanel({ visit, patient }: { visit: Visit; patient: Patient }
         <Banner
           actions={
             <>
-              <Button size="sm" variant="primary" icon={<Mic size={16} />} onClick={() => setSheet(true)}>
+              <Button size="sm" className={tap} variant="primary" icon={<Mic size={16} />} onClick={() => setSheet(true)}>
                 口述護理計畫
               </Button>
               <Link to={assessmentHref} className={linkButton}>
@@ -242,7 +266,7 @@ export function PlanPanel({ visit, patient }: { visit: Visit; patient: Patient }
       <Banner
         hint={slot.mode === "dictation" ? "口述版本會留在版本紀錄" : "目前版本會留在版本紀錄"}
         actions={
-          <Button size="sm" variant="primary" disabled={!canDraft} onClick={() => draft("assessment")}>
+          <Button size="sm" className={tap} variant="primary" disabled={!canDraft} onClick={() => draft("assessment")}>
             依全人評估擬定
           </Button>
         }
@@ -269,7 +293,7 @@ function liveText(visit: Visit, here: boolean) {
   if (here) return "口述中";
   if (d?.status === "transcribing") return "轉文字中";
   if (d?.status === "polishing") return "AI 整理中";
-  if (d?.status === "failed") return d.text ? "整理沒有成功" : "轉文字沒有成功";
+  if (d?.status === "failed") return d.error?.code === "empty" ? "沒有聽到內容" : d.text ? "整理沒有成功" : "轉文字沒有成功";
   if (d?.status === "review") return "口述待整理";
   if (d?.status === "done") return "口述已整理成計畫";
   return "";
@@ -346,6 +370,7 @@ function Capture({
   const fileRef = useRef<HTMLInputElement>(null);
   const base = planBaseFor(visit, patient);
   const d = fresh ? null : visit.planDictation;
+  const stale = useOlderThan(d?.status === "transcribing" || d?.status === "polishing" ? d.updatedAt : null, STALE_MS);
 
   const done = () => {
     setTyping(false);
@@ -355,8 +380,8 @@ function Capture({
   const startMic = async () => {
     setTyping(false);
     const res = await startPlanDictation(visit.id, {
-      onLimit: () => {
-        toast("已滿 8 分鐘，先整理這段");
+      onLimit: (reason) => {
+        toast(reason === "limit" ? "已滿 8 分鐘，先整理這段" : "錄音被中斷，先整理已錄的這段");
         onDone?.();
       },
     });
@@ -371,12 +396,14 @@ function Capture({
       setWait(null);
     }
     onDone?.();
+    focusPlanCard();
   };
 
   const saveAudio = async (file: File, ms: number) => {
     const res = await savePlanDictationAudio(visit.id, file, { input: "file", fileName: file.name, durationMs: ms });
     if (!res.ok) return toast(res.message, { error: true, ms: 5000 });
     done();
+    focusPlanCard();
   };
 
   const pickFile = async (file: File) => {
@@ -445,24 +472,39 @@ function Capture({
         </Button>
       </div>
     );
-  } else if (d?.status === "transcribing") {
-    content = (
-      <p className="flex items-center gap-2 font-bold">
-        <Spinner size={18} /> 轉文字中…
-      </p>
-    );
-  } else if (d?.status === "polishing") {
-    content = (
-      <p className="flex items-center gap-2 font-bold">
-        <Spinner size={18} /> AI 整理中…
-      </p>
-    );
   } else if (typing) {
     const redo = () => {
       setTyping(false);
       if (!fresh) onRedo?.();
     };
-    content = <DictationText visit={visit} patient={patient} editing={false} onDone={done} onRedo={redo} onCancel={() => setTyping(false)} />;
+    content = <DictationText visit={visit} patient={patient} editing={false} fresh={fresh} onDone={done} onRedo={redo} onCancel={() => setTyping(false)} />;
+  } else if (d?.status === "transcribing" || d?.status === "polishing") {
+    content = (
+      <div className="flex flex-col gap-2.5">
+        <p className="flex items-center gap-2 font-bold">
+          <Spinner size={18} /> {d.status === "transcribing" ? "轉文字中…" : "AI 整理中…"}
+        </p>
+        {stale && (
+          <>
+            <p className="text-[0.92rem] font-bold leading-snug text-ink-soft">等比較久了：可以先改用打字，或捨棄這次口述。</p>
+            <div className="flex flex-wrap gap-2">
+              {d.status === "polishing" && d.text ? (
+                <Button size="sm" className={tap} onClick={() => setPlanDictationText(visit.id, d.text ?? "")}>
+                  修改口述原文
+                </Button>
+              ) : (
+                <Button size="sm" className={tap} icon={<Keyboard size={16} />} onClick={() => setTyping(true)}>
+                  改用打字
+                </Button>
+              )}
+              <Button size="sm" className={tap} variant="ghost" onClick={() => discardPlanDictation(visit.id)}>
+                捨棄
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    );
   } else if (d?.status === "failed" && !d.text) {
     const empty = d.error?.code === "empty";
     content = (
@@ -470,40 +512,47 @@ function Capture({
         <p className="font-bold leading-snug text-danger">{empty ? d.error?.message : `轉文字沒有成功：${d.error?.message ?? ""}`}</p>
         <div className="flex flex-wrap gap-2">
           {d.audio && !empty ? (
-            <Button size="sm" variant="primary" icon={<RefreshCw size={16} />} onClick={() => transcribePlanDictation(visit.id)}>
+            <Button size="sm" className={tap} variant="primary" icon={<RefreshCw size={16} />} onClick={() => transcribePlanDictation(visit.id)}>
               重試轉文字
             </Button>
           ) : (
             onRedo && (
-              <Button size="sm" variant="primary" icon={<Mic size={16} />} onClick={onRedo}>
+              <Button size="sm" className={tap} variant="primary" icon={<Mic size={16} />} onClick={onRedo}>
                 重新口述
               </Button>
             )
           )}
-          <Button size="sm" icon={<Keyboard size={16} />} onClick={() => setTyping(true)}>
+          <Button size="sm" className={tap} icon={<Keyboard size={16} />} onClick={() => setTyping(true)}>
             改用打字
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => discardPlanDictation(visit.id)}>
+          <Button size="sm" className={tap} variant="ghost" onClick={() => discardPlanDictation(visit.id)}>
             捨棄
           </Button>
         </div>
       </div>
     );
   } else if (d?.status === "failed") {
-    const tooLong = d.error?.code === "too_long";
+    // 太長或只聽到贅詞：文字留著讓護理師改，不重試整理。
+    const empty = d.error?.code === "empty";
+    const tooLong = d.error?.code === "too_long" || empty;
     content = (
       <div className="flex flex-col gap-2.5">
         <p className="font-bold leading-snug text-danger">{tooLong ? d.error?.message : `整理沒有成功：${d.error?.message ?? ""}`}</p>
         <div className="flex flex-wrap gap-2">
+          {empty && onRedo && (
+            <Button size="sm" className={tap} icon={<Mic size={16} />} onClick={onRedo}>
+              重新口述
+            </Button>
+          )}
           {!tooLong && (
-            <Button size="sm" variant="primary" icon={<RefreshCw size={16} />} onClick={() => polishPlanDictation(visit.id)}>
+            <Button size="sm" className={tap} variant="primary" icon={<RefreshCw size={16} />} onClick={() => polishPlanDictation(visit.id)}>
               再整理一次
             </Button>
           )}
-          <Button size="sm" variant={tooLong ? "primary" : "secondary"} onClick={() => setPlanDictationText(visit.id, d.text ?? "")}>
+          <Button size="sm" className={tap} variant={tooLong ? "primary" : "secondary"} onClick={() => setPlanDictationText(visit.id, d.text ?? "")}>
             修改口述原文
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => discardPlanDictation(visit.id)}>
+          <Button size="sm" className={tap} variant="ghost" onClick={() => discardPlanDictation(visit.id)}>
             捨棄
           </Button>
         </div>
@@ -515,15 +564,15 @@ function Capture({
     content = (
       <div className="flex flex-col gap-2.5">
         {TRIAL ? (
-          <Button variant="primary" size="xl" block icon={<FileAudio size={22} />} onClick={() => fileRef.current?.click()}>
+          <Button variant="primary" size="xl" block className={wrap} icon={<FileAudio size={22} />} onClick={() => fileRef.current?.click()}>
             選錄音檔（示範）
           </Button>
         ) : (
-          <Button variant="primary" size="xl" block icon={<Mic size={24} />} onClick={startMic}>
+          <Button variant="primary" size="xl" block className={wrap} icon={<Mic size={24} />} onClick={startMic}>
             {fresh ? "開始口述" : "口述護理計畫"}
           </Button>
         )}
-        <div className={cx("grid gap-2.5", TRIAL ? "grid-cols-1" : "grid-cols-2 [:root[data-size=large]_&]:grid-cols-1")}>
+        <div className={cx("grid gap-2.5", TRIAL ? "grid-cols-1" : "grid-cols-2 max-[374px]:grid-cols-1 [:root[data-size=large]_&]:grid-cols-1")}>
           {!TRIAL && (
             <Button icon={<FileAudio size={18} />} onClick={() => fileRef.current?.click()}>
               選錄音檔
@@ -534,7 +583,8 @@ function Capture({
           </Button>
         </div>
         <div className="flex flex-wrap gap-x-5 text-[0.95rem]">
-          <button type="button" className={linkClass} onClick={() => setGuide(true)}>
+          {/* 面板裡不再疊一層面板（Esc 會一次關兩層）：直接展開說明。 */}
+          <button type="button" className={linkClass} aria-expanded={fresh ? guide : undefined} onClick={() => setGuide(fresh ? !guide : true)}>
             iPhone 語音備忘錄怎麼選？
           </button>
           {assessmentHref && (
@@ -543,6 +593,14 @@ function Capture({
             </Link>
           )}
         </div>
+        {fresh && guide && (
+          <div className="rounded-[22px] bg-card p-3.5 outline-ink">
+            <VoiceMemoGuideContent purpose="plan" />
+            <Button variant="primary" size="lg" block className="mt-3" icon={<FileAudio size={20} />} onClick={() => fileRef.current?.click()}>
+              從檔案選錄音
+            </Button>
+          </div>
+        )}
       </div>
     );
   }
@@ -552,7 +610,7 @@ function Capture({
       {content}
       {input}
       {/* onPick 在點擊當下同步開啟選檔（iOS 的使用者手勢規則）。 */}
-      <VoiceMemoGuideSheet open={guide} onClose={() => setGuide(false)} onPick={() => fileRef.current?.click()} purpose="plan" />
+      {!fresh && <VoiceMemoGuideSheet open={guide} onClose={() => setGuide(false)} onPick={() => fileRef.current?.click()} purpose="plan" />}
     </>
   );
 }
@@ -561,8 +619,18 @@ function Capture({
 function RecordingStrip({ replaces, onFinish }: { replaces: boolean; onFinish: () => void }) {
   const snap = useDictation();
   const level = Math.min(1, snap.level * 2.2);
+  const root = useRef<HTMLDivElement>(null);
+  const recording = snap.state === "recording";
+  // 按下的「口述護理計畫／開始口述」已經換成這裡：焦點留在這一區（面板裡也不會跑出對話框），開始錄音後移到「完成口述」。
+  useEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    const finishButton = el.querySelector<HTMLElement>("button[data-dictation-finish]");
+    if (recording && finishButton) finishButton.focus({ preventScroll: true });
+    else if (!el.contains(document.activeElement)) el.focus({ preventScroll: true });
+  }, [recording]);
   return (
-    <div className="flex flex-col gap-3">
+    <div ref={root} tabIndex={-1} aria-label="口述中" className="flex flex-col gap-3 outline-none">
       <div className="flex items-center gap-3">
         <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-danger text-[#141414]">
           <Mic size={22} strokeWidth={2.6} />
@@ -587,7 +655,7 @@ function RecordingStrip({ replaces, onFinish }: { replaces: boolean; onFinish: (
       {replaces && <p className="text-[0.92rem] font-bold text-ink-soft">口述會取代沿用的計畫內容</p>}
       <div aria-live="polite">{snap.nearLimit && <p className="rounded-2xl bg-pending-tint px-3 py-2 font-bold">還有 1 分鐘（上限 8 分鐘）</p>}</div>
       <div className="grid grid-cols-[2fr_1fr] gap-2.5">
-        <Button variant="primary" size="lg" icon={<Square size={18} fill="currentColor" />} disabled={snap.state !== "recording"} onClick={onFinish}>
+        <Button variant="primary" size="lg" data-dictation-finish="" icon={<Square size={18} fill="currentColor" />} disabled={snap.state !== "recording"} onClick={onFinish}>
           完成口述
         </Button>
         <Button size="lg" onClick={cancelPlanDictation}>
@@ -598,11 +666,15 @@ function RecordingStrip({ replaces, onFinish }: { replaces: boolean; onFinish: (
   );
 }
 
-/** 口述文字：打字／貼上，或修正轉好的文字；按「AI 整理成計畫」才整理。離開欄位時先存著。 */
+/**
+ * 口述文字：打字／貼上，或修正轉好的文字；按「AI 整理成計畫」才整理。
+ * 計畫卡上離開欄位時先存著；「口述護理計畫」面板（fresh）裡不先存，關掉面板就是取消。
+ */
 function DictationText({
   visit,
   patient,
   editing,
+  fresh,
   onDone,
   onRedo,
   onCancel,
@@ -610,6 +682,7 @@ function DictationText({
   visit: Visit;
   patient: Patient;
   editing: boolean;
+  fresh?: boolean;
   onDone: () => void;
   onRedo: () => void;
   onCancel: () => void;
@@ -619,18 +692,33 @@ function DictationText({
   const cur = editing ? visit.planDictation : null;
   const [text, setText] = useState(cur?.text ?? "");
   const [busy, setBusy] = useState(false);
-  const label = cur?.provider === "demo" ? "示範口述（試用版不轉錄你的錄音）" : cur && cur.input !== "typed" ? "口述原文（可修正錯字）" : "口述內容";
+  const demoSpoken = cur?.provider === "demo" && cur.input !== "typed";
+  const label = demoSpoken
+    ? TRIAL
+      ? "示範口述（試用版不轉錄你的錄音）"
+      : "口述原文（示範口述）"
+    : cur && cur.input !== "typed"
+      ? "口述原文（可修正錯字）"
+      : cur?.provider === "demo"
+        ? "口述內容（示範口述）"
+        : "口述內容";
   const canDemo = TRIAL || patient.isDemo || settings.demoMode;
   const trimmed = text.trim();
-  // 新打的字存成「打字」的口述（取代之前的錄音）；修正既有的口述則保留原本的錄音。
-  const persist = (t: string) => setPlanDictationText(visit.id, t, cur ? undefined : "typed");
+  // 計畫卡上（不是面板）口述會取代沿用的現行計畫：提醒一次（不擋）。
+  const replaces = !fresh && !!planBaseFor(visit, patient);
+  // 新打的字存成「打字」的口述（取代之前的錄音）；修正既有的口述則保留原本的錄音。按「填入示範口述」沒改過的標成示範口述。
+  const persist = (t: string) => {
+    const typed = !cur || cur.input === "typed";
+    return setPlanDictationText(visit.id, t, cur ? undefined : "typed", typed ? (t === DEMO_PLAN_DICTATION_TEXT.trim() ? "demo" : "typed") : undefined);
+  };
 
   const submit = async () => {
-    if (trimmed.length < MIN_CHARS || busy) return;
+    if (!dictationHasContent(trimmed) || busy) return;
     setBusy(true);
     try {
       await persist(trimmed);
       onDone();
+      focusPlanCard();
       await polishPlanDictation(visit.id);
     } finally {
       setBusy(false);
@@ -643,16 +731,19 @@ function DictationText({
         {label}
       </label>
       {!cur && <p className="-mt-1.5 text-[0.9rem] font-bold text-ink-soft">可貼上語音備忘錄的「拷貝逐字稿」</p>}
+      {replaces && <p className="-mt-1 text-[0.92rem] font-bold text-ink-soft">口述會取代沿用的計畫內容</p>}
       <textarea
         id={id}
         data-plan-dictation=""
         value={text}
         maxLength={PLAN_DICTATION_MAX_CHARS}
         rows={6}
+        // 按「打字輸入」打開的：直接可以打字（iPhone 不用再點一次）。
+        autoFocus={!editing}
         placeholder="例如：問題一 皮膚完整性受損，目標兩週內傷口不擴大，措施每次訪視換藥……"
         onChange={(e) => setText(e.target.value)}
         onBlur={() => {
-          if (trimmed && trimmed !== (visit.planDictation?.text ?? "").trim() && !busy) void persist(trimmed);
+          if (!fresh && trimmed && trimmed !== (visit.planDictation?.text ?? "").trim() && !busy) void persist(trimmed);
         }}
         aria-describedby={`${id}-n`}
         className={textareaClass}
@@ -662,22 +753,23 @@ function DictationText({
           {`${text.length}/${PLAN_DICTATION_MAX_CHARS} 字`}
         </span>
         {canDemo && (
-          <Button size="sm" variant="soft" onClick={() => setText(DEMO_PLAN_DICTATION_TEXT)}>
+          <Button size="sm" className={tap} variant="soft" onClick={() => setText(DEMO_PLAN_DICTATION_TEXT)}>
             填入示範口述
           </Button>
         )}
       </div>
-      <Button variant="primary" size="lg" block icon={busy ? <Spinner size={18} /> : <Sparkles size={20} />} disabled={trimmed.length < MIN_CHARS || busy} onClick={submit}>
+      <Button variant="primary" size="lg" block icon={busy ? <Spinner size={18} /> : <Sparkles size={20} />} disabled={!dictationHasContent(trimmed) || busy} onClick={submit}>
         AI 整理成計畫
       </Button>
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="grid grid-cols-2 gap-2.5 max-[374px]:grid-cols-1 [:root[data-size=large]_&]:grid-cols-1">
         <Button icon={<Mic size={18} />} onClick={onRedo}>
           重新口述
         </Button>
         <Button
           variant="ghost"
           onClick={async () => {
-            if (visit.planDictation?.status === "review") await discardPlanDictation(visit.id);
+            // 面板裡的捨棄只取消這次打字，不動計畫卡上待整理的口述。
+            if (!fresh && visit.planDictation?.status === "review") await discardPlanDictation(visit.id);
             onCancel();
           }}
         >
@@ -705,7 +797,7 @@ export function DictationSheet({ open, onClose, visit, patient }: { open: boolea
         {base ? (
           <p className="rounded-2xl bg-pending-tint p-3 font-bold leading-snug">{`口述的內容會成為新的完整計畫；現行第 ${base.version} 版沒說到的問題不會帶入。`}</p>
         ) : has ? (
-          <p className="rounded-2xl bg-pending-tint p-3 font-bold leading-snug">口述的內容會成為新的完整計畫；目前草稿沒說到的問題不會帶入。</p>
+          <p className="rounded-2xl bg-pending-tint p-3 font-bold leading-snug">口述的內容會成為新的完整計畫；目前計畫沒說到的問題不會帶入。</p>
         ) : null}
         <p className="font-bold leading-snug text-ink-soft">AI 只整理語句，不會新增內容。</p>
         <Capture visit={visit} patient={patient} fresh onDone={onClose} />
@@ -724,7 +816,7 @@ export function PlanDictationSource({ visit, open, onToggle }: { visit: Visit; o
     <div className="mb-3 rounded-2xl bg-plan-tint p-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className="min-w-[10rem] flex-1 font-bold leading-snug">依護理師口述整理・AI 只整理語句</span>
-        <Button size="sm" variant="soft" aria-expanded={open} aria-controls="plan-source" onClick={() => onToggle(!open)}>
+        <Button size="sm" className={tap} variant="soft" aria-expanded={open} aria-controls="plan-source" onClick={() => onToggle(!open)}>
           {open ? "收起原文" : "對照口述原文"}
         </Button>
       </div>
@@ -763,16 +855,17 @@ function SourceText({ visit, version }: { visit: Visit; version: OutputVersion }
   return (
     <div id="plan-source" className="mt-3 flex flex-col gap-2.5">
       <label htmlFor={id} className="font-extrabold">
-        {d?.provider === "demo" && d.id === version.dictationId ? (TRIAL ? "示範口述（試用版不轉錄你的錄音）" : "口述原文（示範口述）") : "口述原文"}
+        {d?.provider === "demo" && d.id === version.dictationId ? (TRIAL && d.input !== "typed" ? "示範口述（試用版不轉錄你的錄音）" : "口述原文（示範口述）") : "口述原文"}
       </label>
       <textarea id={id} data-plan-source="" value={text} maxLength={PLAN_DICTATION_MAX_CHARS} rows={6} onChange={(e) => setText(e.target.value)} className={textareaClass} />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="num text-[0.9rem] font-bold text-ink-soft">{`${text.length}/${PLAN_DICTATION_MAX_CHARS} 字`}</span>
         <Button
           size="sm"
+          className={tap}
           variant="primary"
           icon={busy ? <Spinner size={16} /> : <Sparkles size={16} />}
-          disabled={busy || trimmed.length < MIN_CHARS || trimmed === original.trim()}
+          disabled={busy || !dictationHasContent(trimmed) || trimmed === original.trim()}
           onClick={async () => {
             await setPlanDictationText(visit.id, trimmed);
             toast("正在依修正後的口述重新整理");

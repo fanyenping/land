@@ -107,17 +107,14 @@ function ExportBody({ visit, patient, onBlocked, onClose }: { visit: Visit; pati
           {planOut.status === "confirmed" ? (
             <Included ok>{`護理計畫 第 ${planVersionFor(visit, patient)} 版`}</Included>
           ) : copyable ? (
-            <li className="flex items-start gap-2">
-              <input
-                id="export-plan"
-                type="checkbox"
-                checked={includePlan}
-                onChange={(e) => setPlanPick(e.target.checked)}
-                className="mt-0.5 h-5 w-5 shrink-0 accent-ink"
-              />
-              <label htmlFor="export-plan" className="min-w-0">
-                {`一併確認護理計畫（設為第 ${planVersionFor(visit, patient)} 版）`}
-                {!includePlan && <span className="block text-[0.88rem] text-ink-soft">{`本次不含・${printsBase}`}</span>}
+            <li className="sm:col-span-2">
+              {/* 整列都可以點（至少 44 px），看起來是可以勾的選項，不是靜態的 ✓ 列。 */}
+              <label htmlFor="export-plan" className="flex min-h-[44px] cursor-pointer items-center gap-2.5 rounded-2xl bg-card px-3 py-2 outline-ink">
+                <input id="export-plan" type="checkbox" checked={includePlan} onChange={(e) => setPlanPick(e.target.checked)} className="h-6 w-6 shrink-0 accent-ink" />
+                <span className="min-w-0">
+                  {`一併確認護理計畫（設為第 ${planVersionFor(visit, patient)} 版）`}
+                  {!includePlan && <span className="block text-[0.88rem] text-ink-soft">{`本次不含・${printsBase}`}</span>}
+                </span>
               </label>
             </li>
           ) : (
