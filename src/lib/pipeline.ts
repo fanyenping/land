@@ -2,6 +2,7 @@ import type { AnalyzeRequest, DocKind, GenerateRequest, PatientContext, Previous
 import { PipelineError, analyze, currentEngine, generate, probeEngine, transcribe, translate } from "./api";
 import { db, getBlob, getSettings, updateVisit } from "./db";
 import { ageOf } from "./format";
+import { assessmentSummary } from "../assessment/forms";
 import { TRIAL } from "./env";
 import { emptyOutput, newId, type AppError, type OutputState, type Patient, type Stage, type Visit } from "./model";
 import { confirmedVitalList, initialVitals } from "./vitals";
@@ -233,7 +234,13 @@ async function writeDoc(visitId: string, kind: DocKind, opts: WriteOptions) {
     return { outputs: { ...v.outputs, [kind]: { ...out, status: UNTOUCHED.has(out.status) ? "writing" : out.status, busy: true, error: null } } };
   });
 
+  // 初次訪視的護理計畫依全人評估擬定；其他文件只當背景。
+  const assessmentInfo = {
+    visitKind: visit.kind ?? "follow",
+    assessment: kind === "plan" ? assessmentSummary(patient.assessment) : null,
+  };
   const req: GenerateRequest = {
+    ...assessmentInfo,
     kind,
     visitDate: visit.date,
     patient: patientContext(patient),

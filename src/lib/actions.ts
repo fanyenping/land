@@ -77,22 +77,32 @@ export function consentValid(p: Patient): boolean {
 
 /* ----------------------------- 訪視 ----------------------------- */
 
-/** 取得今天這位個案「還沒開始收尾」的訪視；沒有就建立一筆。 */
+/** 取得今天這位個案「還沒結束」的訪視；沒有就建立一筆。 */
 export async function ensureTodayVisit(patientId: string): Promise<Visit> {
   const today = todayStr();
   const existing = (await db.visits.where("patientId").equals(patientId).toArray()).find(
     (v) => v.date === today && ["scheduled", "recording", "paused", "interrupted"].includes(v.status),
   );
   if (existing) return existing;
-  const v = newVisit(patientId, today, hhmm());
+  const v = { ...newVisit(patientId, today, hhmm()), kind: await visitKindFor(patientId) };
   await db.visits.put(v);
   return v;
+}
+
+/** 這位個案的第一次訪視是「初次訪視」（要做全人評估）；之後都是再次訪視。 */
+export async function visitKindFor(patientId: string): Promise<"first" | "follow"> {
+  const visits = await db.visits.where("patientId").equals(patientId).toArray();
+  return visits.some((v) => v.status === "review" || v.status === "done") ? "follow" : "first";
+}
+
+export async function setVisitKind(visitId: string, kind: "first" | "follow") {
+  await updateVisit(visitId, { kind });
 }
 
 export async function scheduleVisit(patientId: string, date: string, time: string | null) {
   const exists = (await db.visits.where("patientId").equals(patientId).toArray()).find((v) => v.date === date && v.status === "scheduled");
   if (exists) return exists;
-  const v = newVisit(patientId, date, time);
+  const v = { ...newVisit(patientId, date, time), kind: await visitKindFor(patientId) };
   await db.visits.put(v);
   return v;
 }
@@ -252,7 +262,7 @@ export function storeSummary(res: StoreResult, tail = "") {
 export async function importToPatient(patientId: string, files: File[]): Promise<{ visitId: string | null; result: StoreResult }> {
   const today = todayStr();
   const reuse = (await db.visits.where("patientId").equals(patientId).toArray()).find((v) => v.date === today && v.status === "scheduled");
-  const visit = reuse ?? newVisit(patientId, today, hhmm());
+  const visit = reuse ?? { ...newVisit(patientId, today, hhmm()), kind: await visitKindFor(patientId) };
   if (!reuse) await db.visits.put(visit);
   let result: StoreResult;
   try {

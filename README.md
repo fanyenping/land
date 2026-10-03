@@ -14,6 +14,8 @@
 | [docs/01-research-summary.md](docs/01-research-summary.md) | 現況軟硬體架構、使用者優缺點整合（公開版） |
 | [docs/02-user-flow.md](docs/02-user-flow.md) | 先想流程：三案評選後的最終流程規格（狀態機、AI 管線、輸出模板、剪貼簿格式） |
 | [docs/03-design-system.md](docs/03-design-system.md) | 視覺系統：參考風格拆解、色票、角色圖示、元件 |
+| [docs/04-care-record-export.md](docs/04-care-record-export.md) | 照護紀錄導出：HIS 照護紀錄結構拆解、複製轉發與 PDF 下載 |
+| [docs/05-visits-and-assessment.md](docs/05-visits-and-assessment.md) | 初次訪視／再次訪視、全人評估 13 張表與依評估擬定護理計畫 |
 
 ## 快速開始
 

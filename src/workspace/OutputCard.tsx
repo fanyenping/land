@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router";
 import { AlertTriangle, Check, Copy, History, Languages, MoreHorizontal, Pencil, RefreshCw, Send, ShieldCheck } from "lucide-react";
 import { LANG_LABEL, type DocKind, type TranslateLang } from "../../shared/types";
 import { ActionSheet } from "../components/ActionSheet";
@@ -11,7 +12,8 @@ import { TRIAL } from "../lib/env";
 import { clock } from "../lib/format";
 import { useSettings } from "../lib/hooks";
 import type { Patient, Visit } from "../lib/model";
-import { translateEdu } from "../lib/pipeline";
+import { regenerate, translateEdu } from "../lib/pipeline";
+import { completedCount } from "../assessment/forms";
 import { EditSheet, RegenerateSheet, VersionsSheet } from "./DocSheets";
 
 const STYLE: Record<DocKind, { bg: string; tint: string; critter: CritterKind }> = {
@@ -107,7 +109,10 @@ export function OutputCard({
           <Critter kind={st.critter} size={36} animate={writing} />
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="font-round text-[1.35rem] font-extrabold leading-tight">{title}</h2>
+          <h2 className="font-round text-[1.35rem] font-extrabold leading-tight">
+            {title}
+            {kind === "record" && visit.kind === "first" && <span className="ml-1.5 text-[0.95rem]">本次病摘</span>}
+          </h2>
           <p className="text-[0.92rem] font-bold leading-snug">
             {statusLabel}
             {has && !writing ? `・${chars} 字` : ""}
@@ -150,6 +155,8 @@ export function OutputCard({
             </button>
           </div>
         )}
+
+        {kind === "plan" && visit.kind === "first" && has && <AssessmentBanner visit={visit} patient={patient} createdAt={out.versions[out.current]?.createdAt ?? ""} />}
 
         {pendingSuggestions.map((s) => (
           <div key={s.id} className="mb-3 rounded-2xl bg-pending-tint p-3">
@@ -373,5 +380,28 @@ export function OutputCard({
         }}
       />
     </article>
+  );
+}
+
+/** 初次訪視的計畫依全人評估擬定：還沒填完或評估有更新時提示。 */
+function AssessmentBanner({ visit, patient, createdAt }: { visit: Visit; patient: Patient; createdAt: string }) {
+  const n = completedCount(patient.assessment);
+  const updated = patient.assessment?.updatedAt ?? "";
+  if (n < 13) {
+    return (
+      <Link to={`/patients/${patient.id}/assessment`} className="mb-3 flex min-h-[52px] items-center gap-2 rounded-2xl bg-pdf-tint px-3 font-bold">
+        <span className="flex-1">全人評估 {n}/13：填完後依評估擬定計畫</span>
+        <span className="underline underline-offset-4">去填寫</span>
+      </Link>
+    );
+  }
+  if (updated <= createdAt) return null;
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-2xl bg-pdf-tint p-3 font-bold">
+      <span className="flex-1">全人評估有更新</span>
+      <Button size="sm" variant="primary" onClick={() => regenerate(visit.id, "plan", [], null, "依全人評估重新擬定")}>
+        依評估重新擬定
+      </Button>
+    </div>
   );
 }

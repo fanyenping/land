@@ -17,8 +17,10 @@ const Ctx = createContext<(text: string, opts?: ToastOptions) => void>(() => und
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([]);
-  // 錄音畫面沒有底部導覽，主要按鈕就在底部：提示改到上方，不要蓋住「完成訪視」。
-  const top = /^\/v\/[^/]+\/rec$/.test(useLocation().pathname);
+  const path = useLocation().pathname;
+  // 錄音畫面的主要按鈕在底部：提示改到上方，不要蓋住「完成訪視」。工作台與評估表底部有固定按鈕：提示放更高。
+  const top = /^\/v\/[^/]+\/rec$/.test(path);
+  const aboveBar = /^\/v\/[^/]+$/.test(path) || /^\/patients\/[^/]+\/assessment\/[^/]+$/.test(path);
   const seq = useRef(0);
 
   const show = useCallback((text: string, opts?: ToastOptions) => {
@@ -34,7 +36,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         aria-live="polite"
         className={
           "pointer-events-none fixed inset-x-0 z-[60] flex flex-col items-center gap-2 px-4 " +
-          (top ? "top-[calc(env(safe-area-inset-top)+76px)]" : "bottom-[calc(env(safe-area-inset-bottom)+104px)] md:bottom-8")
+          (top
+            ? "top-[calc(env(safe-area-inset-top)+76px)]"
+            : aboveBar
+              ? "bottom-[calc(env(safe-area-inset-bottom)+168px)] lg:bottom-8"
+              : "bottom-[calc(env(safe-area-inset-bottom)+92px)] lg:bottom-8")
         }
       >
         {items.map((t) => (

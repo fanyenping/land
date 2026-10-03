@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router";
-import { ChevronLeft, Copy, FileText, FileUp, Info, Mic, MoreHorizontal, Pencil, Shuffle, Trash2 } from "lucide-react";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
+import { ChevronLeft, ChevronRight, ClipboardList, Copy, FileText, FileUp, Info, Mic, MoreHorizontal, Pencil, Shuffle, Trash2 } from "lucide-react";
 import { VITAL_LABEL, type DocKind, type VitalKey } from "../../shared/types";
 import { useFlows } from "../app/Flows";
 import { ActionSheet } from "../components/ActionSheet";
@@ -10,7 +10,7 @@ import { Sheet } from "../components/Sheet";
 import { useToast } from "../components/Toast";
 import { VitalsSheet } from "../components/VitalsSheet";
 import { Button, Pill, RoundButton, cx } from "../components/ui";
-import { ackWarnings, addMaterial, blockersFor, confirmAll, confirmAndCopy, deleteVisit, storageErrorMessage, storeSummary, type Blocker } from "../lib/actions";
+import { ackWarnings, addMaterial, blockersFor, confirmAll, confirmAndCopy, deleteVisit, setVisitKind, storageErrorMessage, storeSummary, type Blocker } from "../lib/actions";
 import { isDemoEngine } from "../lib/api";
 import { docTitle } from "../lib/compose";
 import { ageOf, clock, longDate, shortDate } from "../lib/format";
@@ -18,6 +18,8 @@ import { useEngine, useMedia, usePatient, useSettings, useVisit } from "../lib/h
 import type { Patient, Visit } from "../lib/model";
 import { nextDue } from "../lib/pipeline";
 import { visitStatus } from "../lib/status";
+import { AssessmentCard } from "../assessment/AssessmentScreens";
+import { completedCount } from "../assessment/forms";
 import { ExportSheet } from "../workspace/ExportSheet";
 import { OutputCard } from "../workspace/OutputCard";
 import { Progress } from "../workspace/Progress";
@@ -65,7 +67,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
   const engine = useEngine();
   const wide = useMedia("(min-width: 1024px)");
   const veryWide = useMedia("(min-width: 1680px)");
-  // 收尾頁內嵌時旁邊還有清單，空間夠寬才用左右兩欄。
+  // 記錄頁內嵌時旁邊還有清單，空間夠寬才用左右兩欄。
   const desktop = embedded ? veryWide : wide;
   const [menu, setMenu] = useState(false);
   const [vitalsOpen, setVitalsOpen] = useState<{ focus: VitalKey | null } | null>(null);
@@ -140,6 +142,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
               <span className="ml-2 text-[0.92rem] font-bold text-ink-soft">{[age ? `${age}` : null, patient.gender].filter(Boolean).join(" ")}</span>
             </span>
             <span className="block truncate text-[0.88rem] font-bold text-ink-soft">
+              {visit.kind === "first" ? "初訪・" : ""}
               {shortDate(visit.date)}
               {visit.recordingStartedAt && ` ${clock(visit.recordingStartedAt)}${visit.recordingEndedAt ? `-${clock(visit.recordingEndedAt)}` : ""}`}
               {visit.parts.length ? `・錄音 ${visit.parts.length} 段` : ""}
@@ -180,7 +183,12 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
     <div
       className={cx(
         "z-30",
-        desktop ? "sticky bottom-4 mt-4" : embedded ? "sticky bottom-0 -mx-4 bg-paper/90 px-4 pb-3 pt-2 backdrop-blur-md md:-mx-6 md:px-6" : "safe-bottom fixed inset-x-0 bottom-0 bg-paper/90 px-4 pb-3 pt-2 backdrop-blur-md",
+        desktop
+          ? "sticky bottom-4 mt-4"
+          : embedded
+            ? "sticky bottom-0 -mx-4 bg-paper/90 px-4 pb-3 pt-2 backdrop-blur-md md:-mx-6 md:px-6"
+            : // 手機：停在底部導覽上方（導覽每個畫面都在）。
+              "sticky bottom-[calc(env(safe-area-inset-bottom)+78px)] -mx-4 bg-paper/90 px-4 pb-2 pt-2 backdrop-blur-md md:-mx-6 md:px-6",
       )}
     >
       <div className="flex items-stretch gap-2.5">
@@ -229,6 +237,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
     content = (
       <div className="grid grid-cols-[minmax(340px,420px)_minmax(0,1fr)] items-start gap-5">
         <div className="sticky top-[84px] flex max-h-[calc(100dvh-100px)] flex-col gap-4 overflow-y-auto pb-6 pr-1">
+          {visit.kind === "first" && <AssessmentStrip patient={patient} />}
           <ReviewBlock visit={visit} patient={patient} onEditVital={(k) => setVitalsOpen({ focus: k })} />
           <VitalsGrid visit={visit} onEdit={(k) => setVitalsOpen({ focus: k })} />
           <section className="rounded-[26px] bg-card p-4 outline-ink">
@@ -250,7 +259,8 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
     );
   } else {
     content = (
-      <div className={cx("flex flex-col gap-4", !embedded && "pb-28")}>
+      <div className="flex flex-col gap-4">
+        {visit.kind === "first" && <AssessmentStrip patient={patient} />}
         <ReviewBlock visit={visit} patient={patient} onEditVital={(k) => setVitalsOpen({ focus: k })} />
         <VitalsGrid visit={visit} onEdit={(k) => setVitalsOpen({ focus: k })} />
         {outputs}
@@ -365,6 +375,13 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
             onSelect: () => flows.moveTo(visit.id, patient.id),
           },
           { label: "個案資訊", icon: <Info size={21} />, onSelect: () => navigate(`/patients/${patient.id}`) },
+          { label: `全人評估（${completedCount(patient.assessment)}/13）`, icon: <ClipboardList size={21} />, onSelect: () => navigate(`/patients/${patient.id}/assessment`) },
+          {
+            label: visit.kind === "first" ? "改為再次訪視" : "改為初次訪視",
+            icon: <Shuffle size={21} />,
+            hint: visit.kind === "first" ? "不需全人評估，計畫沿用現行版本" : "需完成全人評估，計畫依評估擬定",
+            onSelect: () => setVisitKind(visit.id, visit.kind === "first" ? "follow" : "first"),
+          },
           {
             label: "刪除這筆紀錄",
             icon: <Trash2 size={21} />,
@@ -413,6 +430,22 @@ function OtherBlockers({ visit, kind }: { visit: Visit; kind: DocKind | "all" })
   );
 }
 
+/** 初次訪視：全人評估進度（計畫依評估擬定）。 */
+function AssessmentStrip({ patient }: { patient: Patient }) {
+  const n = completedCount(patient.assessment);
+  return (
+    <Link
+      to={`/patients/${patient.id}/assessment`}
+      className={cx("flex min-h-[56px] items-center gap-3 rounded-[22px] px-4 font-bold outline-ink", n < 13 ? "bg-pdf-tint" : "bg-card")}
+    >
+      <ClipboardList size={20} />
+      <span className="min-w-0 flex-1">{n < 13 ? "初次訪視：全人評估還沒完成" : "初次訪視：全人評估已完成"}</span>
+      <span className="num">{n}/13</span>
+      <ChevronRight size={18} />
+    </Link>
+  );
+}
+
 /** 訪前提要：上次重點、管路到期、現行計畫、同意狀態；主要動作是開始錄音。 */
 function Brief({ visit, patient, onImport }: { visit: Visit; patient: Patient; onImport: () => void }) {
   const flows = useFlows();
@@ -420,6 +453,7 @@ function Brief({ visit, patient, onImport }: { visit: Visit; patient: Patient; o
   const problems = patient.plan?.text.split("\n").filter((l) => /^(護理)?問題\s*\d/.test(l.trim())) ?? [];
   return (
     <div className="flex flex-col gap-4">
+      {visit.kind === "first" && <AssessmentCard patient={patient} highlight />}
       <section className="rounded-[30px] bg-night p-5 text-night-ink">
         <p className="mb-1 font-bold opacity-75">{longDate(visit.date)}{visit.time ? ` ${visit.time}` : ""}・訪前提要</p>
         <p className="font-round text-[1.5rem] font-extrabold leading-snug">{patient.last ? `上次（${shortDate(patient.last.date)}）：${patient.last.summary}` : "第一次訪視"}</p>

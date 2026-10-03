@@ -169,3 +169,43 @@ export function missingFields(visit: Visit, patient: Patient, settings: Settings
   if (!patient.resource) miss.push("使用資源");
   return miss;
 }
+
+/**
+ * 照護紀錄的純文字版（「複製」用，可貼到 LINE 或其他 App）：與 PDF 同樣的區塊與順序。
+ */
+export function careRecordText(d: CareRecordData): string {
+  const m = d.main;
+  const dash = (v: string) => v || "—";
+  const lines: string[] = [];
+  lines.push(`【${d.title}】${d.demo ? "（示範資料）" : ""}`);
+  lines.push(`機構名稱：${dash(d.clinicName)}`, `個案姓名：${d.patientName}`, `收案日期：${dash(d.intakeDate)}`, "");
+  lines.push(`照護日期／時間：${m.visitDateTime}`, `紀錄來源：${m.source}`);
+  lines.push(`身高：${dash(m.height)}　體重：${dash(m.weight)}　BMI：${dash(m.bmi)}`);
+  lines.push(`臂中圍：${dash(m.mac)}　小腿圍：${dash(m.calf)}`);
+  lines.push(`居住所：${dash(m.residence)}　居住區域：${dash(m.area)}`, `使用資源：${dash(m.resource)}`, `服務項目：${dash(m.serviceItems)}`);
+  lines.push("", "照護紀錄：", m.record || "—", "", `記錄人員：${m.recorder}`);
+
+  lines.push("", "【生命徵象紀錄】");
+  if (d.vitals) {
+    const v = d.vitals;
+    lines.push(
+      `量測時間：${v.measuredAt.replace("\n", " ")}`,
+      `體溫 ${v.temp}　脈搏 ${v.pulse}　呼吸 ${v.resp}`,
+      `血壓 ${v.sbp}/${v.dbp}`.replace("mmHg/", "/"),
+      `血糖 ${v.glucose.replace("\n", " ")}　血氧 ${v.spo2}`,
+    );
+  } else lines.push("本次未量測");
+
+  const events = (title: string, rows: CareRecordRow[]) => {
+    lines.push("", `【${title}】`);
+    if (!rows.length) lines.push(`無（${d.eventRange}）`);
+    for (const r of rows) lines.push(`發生時間：${r.when}`, `發生原因：${r.reason}`);
+  };
+  events("發生非計畫性住院", d.admissions);
+  events("個案近期使用急診", d.erVisits);
+
+  if (d.plan) lines.push("", `【護理計畫】${d.plan.version}`, d.plan.text, `確認人員：${d.plan.confirmedBy}`);
+  if (d.edu) lines.push("", "【家屬衛教】", d.edu.text, `確認人員：${d.edu.confirmedBy}`);
+  lines.push("", `匯出人員：${d.exporter}　匯出時間：${d.exportedAt}`);
+  return lines.join("\n");
+}

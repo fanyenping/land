@@ -47,8 +47,8 @@ async function run(name, viewport, isMobile) {
   await shot("03-patients");
 
   // 待確認的那位：打開工作台
-  await page.getByRole("link", { name: "收尾" }).first().click();
-  await page.getByRole("heading", { name: "收尾" }).waitFor();
+  await page.getByRole("link", { name: "記錄" }).first().click();
+  await page.getByRole("heading", { name: "記錄" }).waitFor();
   await shot("04-queue");
   if (isMobile) {
     await page.locator("a[href^='/v/']").first().click();
@@ -179,19 +179,30 @@ async function deep() {
   // 照護紀錄導出：補欄位 → 產生 PDF → 下載並檢查內容
   await page.getByRole("button", { name: "照護紀錄導出（PDF）" }).click();
   const dlg = page.getByRole("dialog");
-  await dlg.getByText("這份 PDF 會包含").waitFor();
+  // 面板底部有固定的「確認並導出」：先把目標捲到中間再點，避免被擋住。
+  const tap = async (loc) => {
+    await loc.evaluate((e) => e.scrollIntoView({ block: "center" }));
+    await loc.click();
+  };
+  await dlg.getByText("照護紀錄包含").waitFor();
   await dlg.getByLabel("身高 cm").fill("155");
   await dlg.getByLabel("身高 cm").press("Tab");
   await dlg.getByLabel("體重 kg").fill("52.3");
   await dlg.getByLabel("體重 kg").press("Tab");
-  await dlg.getByRole("button", { name: "在宅(居家)" }).click();
-  await dlg.getByRole("radio", { name: "急診" }).click();
+  await tap(dlg.getByRole("button", { name: "在宅(居家)" }));
+  await tap(dlg.getByRole("radio", { name: "急診" }));
   await dlg.getByLabel("發生原因").fill("跌倒送急診，X 光未見骨折後返家。");
-  await dlg.getByRole("button", { name: "加入", exact: true }).click();
+  await tap(dlg.getByRole("button", { name: "加入", exact: true }));
   await dlg.getByText("跌倒送急診").waitFor();
   await shot("05b-export-form");
-  await dlg.getByRole("button", { name: "確認並產生 PDF" }).click();
-  await dlg.getByText("PDF 已產生").waitFor({ timeout: 60_000 });
+  await dlg.getByRole("button", { name: "確認並導出" }).click();
+  await dlg.getByRole("button", { name: "複製", exact: true }).click();
+  await page.waitForTimeout(300);
+  const careText = await page.evaluate(() => navigator.clipboard.readText()).catch(() => "");
+  for (const want of ["【照護紀錄】", "周美玉", "【生命徵象紀錄】", "【護理計畫】", "【家屬衛教】", "跌倒送急診"]) {
+    if (!careText.includes(want)) errors.push(`[deep] copied care record missing: ${want}`);
+  }
+  await dlg.getByRole("button", { name: "下載 PDF" }).waitFor({ timeout: 60_000 });
   await shot("05c-export-ready");
   const [dl] = await Promise.all([page.waitForEvent("download"), dlg.getByRole("button", { name: "下載 PDF" }).click()]);
   const pdfPath = `${OUT}/deep-care-record.pdf`;

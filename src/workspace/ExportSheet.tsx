@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Download, ExternalLink, FileText, MessageCircle, Plus, Send, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Copy, Download, FileText, Plus, Send, Trash2 } from "lucide-react";
 import { Critter } from "../components/Critter";
 import { Sheet } from "../components/Sheet";
 import { useToast } from "../components/Toast";
@@ -7,7 +7,8 @@ import { Button, Chip, Field, Segmented, Spinner, cx, inputClass } from "../comp
 import { confirmForExport, logExport, type Blocker } from "../lib/actions";
 import { db, saveSettings, updatePatient, updateVisit } from "../lib/db";
 import { TRIAL } from "../lib/env";
-import { bytes, clock, maskName } from "../lib/format";
+import { writeClipboard } from "../lib/compose";
+import { bytes, maskName } from "../lib/format";
 import { useSettings } from "../lib/hooks";
 import { newId, type CareEvent, type Patient, type Visit } from "../lib/model";
 import {
@@ -19,12 +20,21 @@ import {
   bmiOf,
   careRecordData,
   careRecordFilename,
+  careRecordText,
   eventsInWindow,
   missingFields,
   serviceItemsFor,
 } from "../export/careRecord";
-import { renderCareRecordPdf } from "../export/careRecordPdf";
-import { canShareFile, lineShareUrl, saveFile, shareFile } from "../export/share";
+import type { CareRecordData } from "../export/types";
+
+// 版面模組另外開發中：用 glob 載入，檔案出現前開發伺服器也能運作。
+const pdfModules = import.meta.glob<{ renderCareRecordPdf: (d: CareRecordData, url: (f: string) => string) => Promise<Blob> }>("../export/careRecordPdf.ts");
+async function renderCareRecordPdf(data: CareRecordData, url: (f: string) => string): Promise<Blob> {
+  const load = pdfModules["../export/careRecordPdf.ts"];
+  if (!load) throw new Error("PDF 版面模組尚未完成。");
+  return (await load()).renderCareRecordPdf(data, url);
+}
+import { canShareFile, saveFile, shareFile, shareText } from "../export/share";
 
 /** 字型與 App 放在同一處：正式版在網站根目錄的 /fonts，試用版是分享網頁旁的 fonts/。 */
 const fontUrl = (file: string) => (TRIAL ? `fonts/${file}` : `${import.meta.env.BASE_URL}fonts/${file}`);
@@ -53,67 +63,50 @@ export function ExportSheet({
   );
 }
 
-interface Made {
-  file: File;
-  url: string;
+interface Ready {
+  data: CareRecordData;
+  filename: string;
 }
 
 function ExportBody({ visit, patient, onBlocked }: { visit: Visit; patient: Patient; onBlocked: (blockers: Blocker[]) => void }) {
   const settings = useSettings();
-  const toast = useToast();
   const [busy, setBusy] = useState(false);
-  const [made, setMade] = useState<Made | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  // 換新檔或關閉面板時釋放上一個預覽網址。
-  useEffect(() => {
-    if (!made) return;
-    return () => URL.revokeObjectURL(made.url);
-  }, [made]);
+  const [ready, setReady] = useState<Ready | null>(null);
 
   const data = useMemo(() => careRecordData(visit, patient, settings), [visit, patient, settings]);
   const missing = missingFields(visit, patient, settings);
   const services = serviceItemsFor(visit, patient);
   const vitalsCount = data.vitals ? Object.entries(data.vitals).filter(([k, v]) => k !== "measuredAt" && v !== "—").length : 0;
 
-  const generate = async () => {
-    setError(null);
+  const confirm = async () => {
     const blockers = await confirmForExport(visit);
     if (blockers.length) return onBlocked(blockers);
     setBusy(true);
-    try {
-      // 確認後重新讀一次（確認人員、計畫版號寫進去了）。
-      const v = (await db.visits.get(visit.id)) ?? visit;
-      const p = (await db.patients.get(patient.id)) ?? patient;
-      const blob = await renderCareRecordPdf(careRecordData(v, p, settings), fontUrl);
-      const file = new File([blob], careRecordFilename(v, p), { type: "application/pdf" });
-      setMade({ file, url: URL.createObjectURL(file) });
-      await logExport(visit.id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "PDF 沒有產生成功，請再試一次。");
-    } finally {
-      setBusy(false);
-    }
+    // 確認後重新讀一次（確認人員、計畫版號寫進去了）。
+    const v = (await db.visits.get(visit.id)) ?? visit;
+    const p = (await db.patients.get(patient.id)) ?? patient;
+    await logExport(visit.id);
+    setReady({ data: careRecordData(v, p, settings), filename: careRecordFilename(v, p) });
+    setBusy(false);
   };
 
-  if (made) return <Ready made={made} visit={visit} patient={patient} onRedo={() => setMade(null)} toast={toast} eduText={data.edu?.text ?? null} />;
+  if (ready) return <ReadyView ready={ready} title={`${maskName(patient.name)} 照護紀錄 ${visit.date}`} onEdit={() => setReady(null)} />;
 
   return (
     <div className="flex flex-col gap-5 pb-4">
       <section className="rounded-[24px] bg-pdf-tint p-4 outline-ink">
         <p className="mb-2 flex items-center gap-2 font-round text-[1.15rem] font-extrabold">
           <Critter kind="pdf" size={34} />
-          這份 PDF 會包含
+          照護紀錄包含
         </p>
         <ul className="grid gap-1.5 text-[0.98rem] font-bold sm:grid-cols-2">
-          <Included ok={!!data.main.record}>照護紀錄（{settings.recordTitle}）</Included>
-          <Included ok={vitalsCount > 0}>生命徵象 {vitalsCount ? `${vitalsCount} 項` : "（本次未量測）"}</Included>
-          <Included ok={!!data.plan}>護理計畫 {data.plan?.version ?? ""}</Included>
+          <Included ok={!!data.main.record}>{settings.recordTitle}</Included>
+          <Included ok={vitalsCount > 0}>生命徵象 {vitalsCount ? `${vitalsCount} 項` : "（未量測）"}</Included>
+          <Included ok={!!data.plan}>護理計畫 {data.plan?.version.replace(/（.*）/, "") ?? ""}</Included>
           <Included ok={!!data.edu}>家屬衛教</Included>
-          <Included ok>非計畫性住院 {data.admissions.length} 筆・急診 {data.erVisits.length} 筆</Included>
-          <Included ok>封面（個案姓名、收案日期、機構）</Included>
+          <Included ok>住院 {data.admissions.length}・急診 {data.erVisits.length}</Included>
         </ul>
-        {missing.length > 0 && <p className="mt-2 text-[0.92rem] font-bold text-ink-soft">還沒填：{missing.join("、")}（可留空，PDF 會印「—」）</p>}
+        {missing.length > 0 && <p className="mt-2 text-[0.92rem] font-bold text-ink-soft">未填：{missing.join("、")}</p>}
       </section>
 
       {!settings.clinicName && (
@@ -121,7 +114,7 @@ function ExportBody({ visit, patient, onBlocked }: { visit: Visit; patient: Pati
       )}
 
       <Group title="這次訪視">
-        <Field label="紀錄來源">
+        <ChipGroup label="紀錄來源">
           <div className="flex flex-wrap gap-2">
             {SOURCE_OPTIONS.map((s) => (
               <Chip key={s} active={(visit.source ?? "家訪") === s} onClick={() => updateVisit(visit.id, { source: s })}>
@@ -129,8 +122,8 @@ function ExportBody({ visit, patient, onBlocked }: { visit: Visit; patient: Pati
               </Chip>
             ))}
           </div>
-        </Field>
-        <Field label="服務項目（可複選）">
+        </ChipGroup>
+        <ChipGroup label="服務項目（可複選）">
           <div className="flex flex-wrap gap-2">
             {[...new Set([...SERVICE_OPTIONS, ...services])].map((s) => (
               <Chip
@@ -145,7 +138,7 @@ function ExportBody({ visit, patient, onBlocked }: { visit: Visit; patient: Pati
               </Chip>
             ))}
           </div>
-        </Field>
+        </ChipGroup>
       </Group>
 
       <Group title="身體測量">
@@ -162,7 +155,7 @@ function ExportBody({ visit, patient, onBlocked }: { visit: Visit; patient: Pati
 
       <Group title="個案資料">
         <TextField label="收案日期" type="date" value={patient.intakeDate ?? patient.createdAt.slice(0, 10)} onSave={(v) => updatePatient(patient.id, { intakeDate: v || null })} />
-        <Field label="居住所">
+        <ChipGroup label="居住所">
           <div className="flex flex-wrap gap-2">
             {RESIDENCE_OPTIONS.map((r) => (
               <Chip key={r} active={patient.residence === r} onClick={() => updatePatient(patient.id, { residence: patient.residence === r ? null : r })}>
@@ -170,9 +163,9 @@ function ExportBody({ visit, patient, onBlocked }: { visit: Visit; patient: Pati
               </Chip>
             ))}
           </div>
-        </Field>
+        </ChipGroup>
         <TextField label="居住區域" value={patient.area ?? ""} placeholder="例如 臺北市文山區" onSave={(v) => updatePatient(patient.id, { area: v || null })} />
-        <Field label="使用資源">
+        <ChipGroup label="使用資源">
           <div className="flex flex-wrap gap-2">
             {RESOURCE_OPTIONS.map((r) => (
               <Chip key={r} active={patient.resource === r} onClick={() => updatePatient(patient.id, { resource: patient.resource === r ? null : r })}>
@@ -180,108 +173,115 @@ function ExportBody({ visit, patient, onBlocked }: { visit: Visit; patient: Pati
               </Chip>
             ))}
           </div>
-        </Field>
+        </ChipGroup>
       </Group>
 
       <Events visit={visit} patient={patient} />
 
-      {error && <p className="rounded-2xl bg-danger-tint p-3 font-bold text-danger">{error}</p>}
-
       <div className="sticky bottom-0 -mx-1 bg-paper/95 px-1 pb-1 pt-2 backdrop-blur">
-        <Button variant="primary" size="xl" block icon={busy ? <Spinner size={20} /> : <FileText size={22} />} disabled={busy} onClick={generate}>
-          {busy ? "產生中…" : "確認並產生 PDF"}
+        <Button variant="primary" size="xl" block icon={busy ? <Spinner size={20} /> : <FileText size={22} />} disabled={busy} onClick={confirm}>
+          確認並導出
         </Button>
       </div>
     </div>
   );
 }
 
-function Ready({
-  made,
-  visit,
-  patient,
-  onRedo,
-  toast,
-  eduText,
-}: {
-  made: Made;
-  visit: Visit;
-  patient: Patient;
-  onRedo: () => void;
-  toast: ReturnType<typeof useToast>;
-  eduText: string | null;
-}) {
-  const shareable = canShareFile(made.file);
-  const last = visit.exports?.at(-1);
+/** 導出：複製（貼到 LINE 等 App）或下載 PDF。PDF 在背景先產生，按下載時就能立刻存。 */
+function ReadyView({ ready, title, onEdit }: { ready: Ready; title: string; onEdit: () => void }) {
+  const toast = useToast();
+  const text = useMemo(() => careRecordText(ready.data), [ready]);
+  const [pdf, setPdf] = useState<File | null>(null);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const job = useRef<Promise<File | null> | null>(null);
+
+  const makePdf = useCallback(() => {
+    if (!job.current) {
+      setPdfError(null);
+      job.current = renderCareRecordPdf(ready.data, fontUrl)
+        .then((blob) => {
+          const f = new File([blob], ready.filename, { type: "application/pdf" });
+          setPdf(f);
+          return f;
+        })
+        .catch((err: unknown) => {
+          job.current = null;
+          setPdfError(err instanceof Error ? err.message : "PDF 沒有產生成功，請再試一次。");
+          return null;
+        });
+    }
+    return job.current;
+  }, [ready]);
+
+  useEffect(() => {
+    void makePdf();
+  }, [makePdf]);
+
+  const copy = async () => {
+    if (await writeClipboard(text)) toast("已複製照護紀錄，到 LINE 或其他 App 貼上");
+    else toast("無法寫入剪貼簿，請再試一次", { error: true });
+  };
+
+  const download = async () => {
+    const file = pdf ?? (await makePdf());
+    if (!file) return;
+    const r = await saveFile(file, file.name);
+    if (r === "saved") toast(TRIAL ? "已交給下載" : "已下載 PDF");
+    else if (r === "failed") toast("無法下載，請再試一次", { error: true });
+  };
+
+  const canShareText = !TRIAL && typeof navigator !== "undefined" && !!navigator.share;
+
   return (
     <div className="flex flex-col gap-4 pb-4">
-      <section className="flex items-center gap-3 rounded-[24px] bg-ok-tint p-4 font-bold text-ok">
-        <Critter kind="done" size={44} />
-        <div className="min-w-0">
-          <p className="truncate text-[1.1rem] text-ink">{made.file.name}</p>
-          <p className="text-[0.92rem]">
-            PDF 已產生・{bytes(made.file.size)}
-            {last ? `・${clock(last.at)}` : ""}
-          </p>
-        </div>
-      </section>
-
-      {shareable && (
-        <Button
-          variant="primary"
-          size="xl"
-          block
-          icon={<Send size={22} />}
-          onClick={async () => {
-            const r = await shareFile(made.file, `${maskName(patient.name)} 照護紀錄 ${visit.date}`);
-            if (r === "shared") toast("已交給分享的 App");
-            else if (r === "failed") toast("無法開啟分享，請改用「下載 PDF」", { error: true });
-          }}
-        >
-          分享 PDF（LINE、郵件…）
-        </Button>
-      )}
-
-      <Button
-        variant={shareable ? "secondary" : "primary"}
-        size={shareable ? "lg" : "xl"}
-        block
-        icon={<Download size={20} />}
-        onClick={async () => {
-          const r = await saveFile(made.file, made.file.name);
-          if (r === "saved") toast(TRIAL ? "已交給下載（在 Claude App 可直接分享到 LINE）" : "已下載 PDF");
-          else if (r === "failed") toast("無法下載，請再試一次", { error: true });
-        }}
-      >
-        下載 PDF
-      </Button>
-
-      {!TRIAL && (
-        <a href={made.url} target="_blank" rel="noreferrer" className="inline-flex min-h-[56px] items-center justify-center gap-2 rounded-full bg-card px-5 font-bold outline-ink">
-          <ExternalLink size={19} />
-          開啟預覽
-        </a>
-      )}
-
-      {eduText && (
-        <a
-          href={lineShareUrl(eduText)}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex min-h-[56px] items-center justify-center gap-2 rounded-full bg-[#06c755] px-5 font-bold text-white"
-        >
-          <MessageCircle size={20} />
-          用 LINE 傳衛教文字給家屬
-        </a>
-      )}
-
-      <p className="rounded-2xl bg-pending-tint p-3 text-[0.95rem] font-bold">
-        PDF 含個案全名與病情。分享前請確認對象；給家屬建議只傳衛教文字。
-        {!shareable && !TRIAL ? "這個瀏覽器不支援直接分享檔案：請先下載，再從 LINE 傳送檔案。" : ""}
+      <p className="flex items-center gap-2 font-bold text-ok">
+        <Critter kind="done" size={32} />
+        已確認・{title}
       </p>
 
-      <Button variant="soft" block onClick={onRedo}>
-        修改欄位後重新產生
+      <section className="flex flex-col gap-2.5 rounded-[26px] bg-card p-4 outline-ink">
+        <Button variant="primary" size="xl" block icon={<Copy size={22} />} onClick={copy}>
+          複製
+        </Button>
+        <p className="text-center text-[0.95rem] font-bold text-ink-soft">貼到 LINE 或其他 App 轉發</p>
+        {canShareText && (
+          <Button
+            variant="soft"
+            block
+            icon={<Send size={18} />}
+            onClick={async () => {
+              const r = await shareText(text, title);
+              if (r === "failed") toast("無法開啟分享，請改用「複製」", { error: true });
+            }}
+          >
+            用分享選單傳送
+          </Button>
+        )}
+      </section>
+
+      <section className="flex flex-col gap-2.5 rounded-[26px] bg-card p-4 outline-ink">
+        <Button variant="primary" size="xl" block icon={pdf ? <Download size={22} /> : <Spinner size={20} />} onClick={download} disabled={!pdf && !pdfError}>
+          {pdf ? "下載 PDF" : pdfError ? "重新產生 PDF" : "PDF 產生中…"}
+        </Button>
+        <p className="text-center text-[0.95rem] font-bold text-ink-soft">{pdf ? `${pdf.name}・${bytes(pdf.size)}` : pdfError ?? "A4 照護紀錄"}</p>
+        {pdf && canShareFile(pdf) && (
+          <Button
+            variant="soft"
+            block
+            icon={<Send size={18} />}
+            onClick={async () => {
+              const r = await shareFile(pdf, title);
+              if (r === "failed") toast("無法開啟分享，請改用「下載 PDF」", { error: true });
+            }}
+          >
+            用分享選單傳送 PDF
+          </Button>
+        )}
+      </section>
+
+      <p className="text-center text-[0.9rem] font-bold text-ink-soft">含個案全名與病情，傳送前請確認對象。</p>
+      <Button variant="soft" block onClick={onEdit}>
+        修改欄位
       </Button>
     </div>
   );
@@ -293,6 +293,16 @@ function Included({ ok, children }: { ok: boolean; children: React.ReactNode }) 
       <span className={cx("grid h-5 w-5 shrink-0 place-items-center rounded-full text-[0.7rem]", ok ? "bg-ink text-paper" : "bg-ink/10")}>{ok ? "✓" : ""}</span>
       <span className="min-w-0">{children}</span>
     </li>
+  );
+}
+
+/** 一組選項按鈕（不要用 <label> 包：點標題會觸發第一個按鈕）。 */
+function ChipGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div role="group" aria-label={label}>
+      <span className="mb-1.5 block text-[0.95rem] font-bold">{label}</span>
+      {children}
+    </div>
   );
 }
 

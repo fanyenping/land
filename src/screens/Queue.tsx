@@ -17,7 +17,7 @@ const GROUPS: { key: string; title: string; match: (v: Visit) => boolean }[] = [
   { key: "waiting", title: "等網路", match: (v) => v.status === "waiting" },
 ];
 
-/** 收尾：所有還沒完成的紀錄。電腦版左清單右工作台，J／K 換人。 */
+/** 記錄：所有還沒完成的紀錄。電腦版左清單右工作台，J／K 換人。 */
 export function Queue() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -64,7 +64,7 @@ export function Queue() {
       {ordered.length === 0 && (
         <div className="flex flex-col items-center gap-3 rounded-[30px] bg-card px-6 py-10 text-center outline-ink">
           <Critter kind="done" size={84} />
-          <p className="font-round text-[1.4rem] font-extrabold">都收尾完了</p>
+          <p className="font-round text-[1.4rem] font-extrabold">都記錄完了</p>
         </div>
       )}
       {GROUPS.map((g) => {
@@ -100,7 +100,7 @@ export function Queue() {
   return (
     <div className={cx("mx-auto w-full px-4 pt-[max(env(safe-area-inset-top),16px)] md:px-8 lg:pt-8", desktop ? "max-w-none" : "max-w-[760px]")}>
       <header className="mb-5 flex items-end gap-3">
-        <h1 className="font-round text-[2.6rem] font-extrabold leading-none">收尾</h1>
+        <h1 className="font-round text-[2.6rem] font-extrabold leading-none">記錄</h1>
         <Pill tone="pending" className="mb-1 outline-ink">
           {ordered.length} 筆未完成
         </Pill>

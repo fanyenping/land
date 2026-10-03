@@ -36,6 +36,16 @@ export async function shareFile(file: File, title: string): Promise<ShareOutcome
   }
 }
 
+/** 用系統分享面板傳文字（可選 LINE）。同樣必須在點擊當下呼叫。 */
+export async function shareText(text: string, title: string): Promise<ShareOutcome> {
+  try {
+    await navigator.share({ title, text });
+    return "shared";
+  } catch (err) {
+    return (err as DOMException).name === "AbortError" ? "cancelled" : "failed";
+  }
+}
+
 /** 存成檔案：正式版用瀏覽器下載；試用版交給分享網頁的下載（Claude App 會開系統分享面板）。 */
 export async function saveFile(blob: Blob, filename: string): Promise<SaveOutcome> {
   if (TRIAL) {

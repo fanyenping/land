@@ -15,6 +15,8 @@ import { usePatient, usePatientVisits } from "../lib/hooks";
 import { newId, type Patient, type Tube } from "../lib/model";
 import { nextDue } from "../lib/pipeline";
 import { visitStatus } from "../lib/status";
+import { AssessmentCard } from "../assessment/AssessmentScreens";
+import { completedCount } from "../assessment/forms";
 
 export function PatientDetail() {
   const { id } = useParams();
@@ -45,6 +47,7 @@ export function PatientDetail() {
   const age = ageOf(patient.birthYear);
   const sorted = [...visits].sort((a, b) => (b.date + (b.time ?? "")).localeCompare(a.date + (a.time ?? "")));
   const valid = consentValid(patient);
+  const assessed = completedCount(patient.assessment) === 13;
 
   return (
     <div className="mx-auto w-full max-w-[880px] px-4 pt-[max(env(safe-area-inset-top),16px)] md:px-8 lg:pt-8">
@@ -83,6 +86,13 @@ export function PatientDetail() {
         )}
       </section>
 
+      {/* 新個案（還沒完成全人評估）把評估放在最前面：初次訪視要先做 13 張。 */}
+      {!assessed && (
+        <div className="mb-4">
+          <AssessmentCard patient={patient} highlight />
+        </div>
+      )}
+
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Button variant="primary" size="lg" className="col-span-2" icon={<Mic size={22} />} onClick={() => flows.record(patient)}>
           開始錄音
@@ -103,6 +113,11 @@ export function PatientDetail() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
+        {assessed && (
+          <div className="md:col-span-2">
+            <AssessmentCard patient={patient} />
+          </div>
+        )}
         <Card title="錄音同意">
           {valid ? (
             <>

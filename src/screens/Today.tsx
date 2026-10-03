@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { ChevronRight, FileUp, Info, Mic, MoreHorizontal, Plus, Search, Trash2 } from "lucide-react";
+import { ChevronRight, ClipboardList, FileUp, Info, Mic, MoreHorizontal, Plus, Search, Trash2 } from "lucide-react";
 import { useFlows } from "../app/Flows";
 import { ActionSheet } from "../components/ActionSheet";
 import { Critter } from "../components/Critter";
@@ -14,6 +14,7 @@ import type { Patient, Visit } from "../lib/model";
 import { nextDue } from "../lib/pipeline";
 import { pendingCount, visitStatus } from "../lib/status";
 import { engineLabel } from "../lib/api";
+import { completedCount } from "../assessment/forms";
 import { TRIAL } from "../lib/env";
 import { seedDemo } from "../lib/seed";
 
@@ -96,7 +97,7 @@ export function Today() {
                   <span className="mx-1 inline-flex translate-y-1 items-center">
                     <Critter kind="pending" size={34} />
                   </span>
-                  {waitingReview.length} 份等你收尾。
+                  {waitingReview.length} 份等你記錄。
                 </>
               ) : done.length === todays.length ? (
                 <>，全部完成了。</>
@@ -126,7 +127,7 @@ export function Today() {
       <section className="mb-6 grid grid-cols-3 gap-3" aria-label="今日統計">
         <StatTile n={todays.length} label="今日訪視" className="bg-pending" />
         <StatTile n={done.length} label="已完成" className="bg-plan" />
-        <StatTile n={waitingReview.length} label="待收尾" className="bg-record" to={waitingReview.length ? "/queue" : undefined} />
+        <StatTile n={waitingReview.length} label="待記錄" className="bg-record" to={waitingReview.length ? "/queue" : undefined} />
       </section>
 
       <div className="mb-3 flex items-center gap-2">
@@ -255,6 +256,7 @@ function VisitCard({ visit, patient, index }: { visit: Visit; patient: Patient; 
                 <Name name={patient.name} />
               </span>
               <span className="text-[0.95rem] font-bold text-ink-soft">{[age ? `${age} 歲` : null, patient.gender].filter(Boolean).join(" ")}</span>
+              {visit.kind === "first" && <Pill tone="pdf">初訪</Pill>}
             </span>
             {visit.status !== "scheduled" && (
               <span className="mt-1 block">
@@ -293,6 +295,18 @@ function VisitCard({ visit, patient, index }: { visit: Visit; patient: Patient; 
         </div>
       )}
 
+      {visit.kind === "first" && completedCount(patient.assessment) < 13 && (
+        <Link
+          to={`/patients/${patient.id}/assessment`}
+          className="mt-3 flex min-h-[52px] items-center gap-2 rounded-2xl bg-pdf-tint px-4 font-bold outline-ink"
+        >
+          <ClipboardList size={20} />
+          <span className="flex-1">初次訪視：全人評估</span>
+          <span className="num">{completedCount(patient.assessment)}/13</span>
+          <ChevronRight size={18} />
+        </Link>
+      )}
+
       {primary && (
         <Button variant="primary" size="lg" block className="mt-4" icon={primary.icon} onClick={primary.run}>
           {primary.label}
@@ -307,6 +321,7 @@ function VisitCard({ visit, patient, index }: { visit: Visit; patient: Patient; 
           { label: "匯入文件或錄音檔", icon: <FileUp size={22} />, onSelect: () => flows.openNew(patient) },
           ...(refused || visit.status !== "scheduled" ? [] : [{ label: "口述（不錄現場）", icon: <Mic size={22} />, onSelect: () => flows.record(patient, "dictate") }]),
           { label: "個案資訊", icon: <Info size={22} />, onSelect: () => navigate(`/patients/${patient.id}`) },
+          { label: `全人評估（${completedCount(patient.assessment)}/13）`, icon: <ClipboardList size={22} />, onSelect: () => navigate(`/patients/${patient.id}/assessment`) },
           ...(canRemove
             ? [
                 {

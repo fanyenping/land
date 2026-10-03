@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { Plus, Search } from "lucide-react";
 import { useFlows } from "../app/Flows";
 import { Critter, avatarSpec } from "../components/Critter";
@@ -17,6 +17,7 @@ export function Patients() {
   const patients = usePatients();
   const visits = useAllVisits();
   const flows = useFlows();
+  const navigate = useNavigate();
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const today = todayStr();
@@ -62,7 +63,7 @@ export function Patients() {
         </Pill>
         <div className="ml-auto flex gap-2">
           <RevealButton size={48} />
-          <RoundButton label="新增個案" size={48} onClick={() => flows.editPatient(null)}>
+          <RoundButton label="新增個案" size={48} onClick={() => flows.editPatient(null, (p) => navigate(`/patients/${p.id}`))}>
             <Plus size={24} strokeWidth={2.8} />
           </RoundButton>
         </div>
@@ -78,7 +79,7 @@ export function Patients() {
           [
             ["all", "全部"],
             ["today", "今日訪視"],
-            ["open", "未收尾"],
+            ["open", "待記錄"],
             ["due", "管路 7 天內到期"],
           ] as [Filter, string][]
         ).map(([f, label]) => (

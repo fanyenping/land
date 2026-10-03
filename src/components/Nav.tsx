@@ -10,7 +10,7 @@ type Item = { to: string; label: string; spec: { shape: Shape; face: Face; color
 const ITEMS: Item[] = [
   { to: "/", label: "今天", end: true, spec: { shape: "heart", face: "calm", color: "var(--coral)" } },
   { to: "/patients", label: "個案", spec: { shape: "crown", face: "content", color: "var(--grape)" } },
-  { to: "/queue", label: "收尾", spec: { shape: "quarter", face: "side", color: "var(--pending)" } },
+  { to: "/queue", label: "記錄", spec: { shape: "quarter", face: "side", color: "var(--pending)" } },
   { to: "/settings", label: "設定", spec: { shape: "hexagon", face: "lookUp", color: "var(--edu)" } },
 ];
 
@@ -27,7 +27,7 @@ function NavItem({ item, badge, vertical }: { item: Item; badge?: number; vertic
       className={({ isActive }) =>
         cx(
           "group relative flex items-center rounded-full font-bold transition-colors",
-          vertical ? "min-h-[56px] gap-3 px-3 text-[1.02rem]" : "min-w-[60px] flex-col justify-center gap-0.5 py-1.5 text-[0.78rem]",
+          vertical ? "min-h-[56px] gap-3 px-3 text-[1.02rem]" : "min-w-[50px] flex-col justify-center gap-px py-1 text-[0.72rem]",
           isActive ? "text-ink" : "text-ink-soft hover:text-ink",
           vertical && isActive && "bg-ink/[0.07]",
         )
@@ -38,11 +38,11 @@ function NavItem({ item, badge, vertical }: { item: Item; badge?: number; vertic
           <span
             className={cx(
               "relative grid place-items-center rounded-full transition-all",
-              vertical ? "h-11 w-11" : "h-10 w-10",
+              vertical ? "h-11 w-11" : "h-9 w-9",
               isActive ? "bg-ink" : "bg-transparent",
             )}
           >
-            <Critter spec={item.spec} size={isActive ? 26 : 28} style={isActive ? undefined : { filter: "saturate(.55)", opacity: 0.85 }} />
+            <Critter spec={item.spec} size={vertical ? (isActive ? 26 : 28) : isActive ? 22 : 24} style={isActive ? undefined : { filter: "saturate(.55)", opacity: 0.85 }} />
             {!!badge && (
               <span className="num absolute -right-1 -top-1 grid h-[22px] min-w-[22px] place-items-center rounded-full bg-danger px-1 text-[0.75rem] font-extrabold text-[#141414] outline-ink">
                 {badge}
@@ -56,21 +56,21 @@ function NavItem({ item, badge, vertical }: { item: Item; badge?: number; vertic
   );
 }
 
-/** 手機：懸浮白色膠囊導覽＋中央墨黑「＋」。 */
+/** 手機：懸浮白色膠囊導覽＋中央墨黑「＋」。每個畫面都有，隨時可回到今天。 */
 export function BottomNav({ onPlus }: { onPlus: () => void }) {
   const count = useQueueCount();
   return (
-    <nav aria-label="主要導覽" className="safe-bottom pointer-events-none fixed inset-x-0 bottom-0 z-40 px-3 pb-3 lg:hidden">
-      <div className="pointer-events-auto mx-auto flex max-w-[520px] items-center justify-between rounded-full bg-card px-2 py-1.5 shadow-soft outline-ink">
+    <nav aria-label="主要導覽" className="safe-bottom pointer-events-none fixed inset-x-0 bottom-0 z-40 px-4 pb-2.5 lg:hidden">
+      <div className="pointer-events-auto mx-auto flex max-w-[340px] items-center justify-between rounded-full bg-card px-2 py-0.5 shadow-soft outline-ink">
         <NavItem item={ITEMS[0]} />
         <NavItem item={ITEMS[1]} />
         <button
           type="button"
           onClick={onPlus}
           aria-label="新紀錄：錄音或匯入"
-          className="sticker -my-5 grid h-[66px] w-[66px] shrink-0 place-items-center rounded-full bg-ink text-paper"
+          className="sticker -my-4 grid h-[56px] w-[56px] shrink-0 place-items-center rounded-full bg-ink text-paper"
         >
-          <Plus size={32} strokeWidth={3} />
+          <Plus size={28} strokeWidth={3} />
         </button>
         <NavItem item={ITEMS[2]} badge={count} />
         <NavItem item={ITEMS[3]} />

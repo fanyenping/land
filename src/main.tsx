@@ -10,6 +10,7 @@ import { AppShell } from "./app/AppShell";
 import { Today } from "./screens/Today";
 import { Patients } from "./screens/Patients";
 import { PatientDetail } from "./screens/PatientDetail";
+import { AssessmentForm, AssessmentHome } from "./assessment/AssessmentScreens";
 import { Queue } from "./screens/Queue";
 import { WorkspaceRoute } from "./screens/Workspace";
 import { Recording } from "./screens/Recording";
@@ -45,6 +46,8 @@ const routes: RouteObject[] = [
           { path: "/", element: <Today /> },
           { path: "/patients", element: <Patients /> },
           { path: "/patients/:id", element: <PatientDetail /> },
+          { path: "/patients/:id/assessment", element: <AssessmentHome /> },
+          { path: "/patients/:id/assessment/:form", element: <AssessmentForm /> },
           { path: "/queue", element: <Queue /> },
           { path: "/queue/:id", element: <Queue /> },
           { path: "/v/:id", element: <WorkspaceRoute /> },

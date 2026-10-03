@@ -1,3 +1,4 @@
+import type { FormId, FormRecord, HolisticAssessment } from "../assessment/forms";
 import type {
   AiMeta,
   Analysis,
@@ -69,6 +70,10 @@ export interface Patient {
   resource?: string | null;
   heightCm?: string | null;
   events?: CareEvent[];
+  /** 全人評估（基本資料＋13 張表）。 */
+  assessment?: HolisticAssessment | null;
+  /** 全人評估的修改歷程（每次儲存前的舊版本，只增不刪）。 */
+  assessmentHistory?: { formId: FormId; record: FormRecord; replacedAt: string }[];
 }
 
 export type VisitStatus =
@@ -193,6 +198,8 @@ export interface Visit {
   recordingEndedAt: string | null;
   /** 處理中又補了資料：這輪結束後重新整理。 */
   reprocessQueued?: { audio: boolean } | null;
+  /** 初次訪視（需全人評估、依評估擬定計畫）或再次訪視。舊資料沒有時視為再次訪視。 */
+  kind?: "first" | "follow";
   /* 照護紀錄導出用的訪視資料（舊資料可能沒有）。 */
   /** 紀錄來源：家訪、電訪… */
   source?: string;

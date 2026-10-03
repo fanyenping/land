@@ -14,17 +14,16 @@ export function AppShell() {
   return <Frame />;
 }
 
+/** 底部導覽在每個畫面都留著（隨時回到今天）。 */
 function Frame() {
   const flows = useFlows();
-  const loc = useLocation();
-  const hideNav = /^\/v\/[^/]+$/.test(loc.pathname);
   return (
     <div className="flex min-h-[100dvh]">
       <SideNav onPlus={() => flows.openNew()} />
-      <main className={hideNav ? "min-w-0 flex-1" : "min-w-0 flex-1 pb-[calc(env(safe-area-inset-bottom)+110px)] lg:pb-10"}>
+      <main className="min-w-0 flex-1 pb-[calc(env(safe-area-inset-bottom)+96px)] lg:pb-10">
         <Outlet />
       </main>
-      {!hideNav && <BottomNav onPlus={() => flows.openNew()} />}
+      <BottomNav onPlus={() => flows.openNew()} />
       <DropZone />
     </div>
   );
