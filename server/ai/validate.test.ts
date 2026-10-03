@@ -8,12 +8,14 @@ import {
   vitalAlertLines,
 } from "../../shared/clinical";
 import { demoAnalysis, demoGenerate } from "../../shared/demo";
+import { DEMO_ASSESSMENT } from "../../shared/demoAssessment";
 import { DEMO_DURATION_MS, DEMO_SEGMENTS } from "../../shared/demoTranscript";
 import { EDU_CLOSING, RECORD_HEADINGS, TRANSLATION_PREFIX, parsePlanProblems } from "../../shared/templates";
 import type { AnalyzeRequest, GenerateRequest, PatientContext, VitalReading } from "../../shared/types";
 import { outputSchema, toAiError } from "./claude";
 import { AnalysisOutputSchema, type AnalysisOutput } from "./schemas";
 import {
+  basisLine,
   buildAllowList,
   deepTraditional,
   finalizeAnalysis,
@@ -628,5 +630,62 @@ describe("收案計畫", () => {
     );
     expect(doc.sections[2].body).toBe("慢性（依出院病歷摘要 2026/09/28 照錄）：高血壓。\n異常值：依文件 09/27 血壓 150/88 mmHg。");
     expect(doc.sections[0].body).toBe("依據：出院病歷摘要（2026/09/28）");
+  });
+});
+
+describe("全人評估（護理計畫）", () => {
+  const assessment = "Braden 壓傷 12分（高危險）：活動能力 臥床\n跌倒 55分（高危險）：步態 軟弱\nADL 35分（嚴重依賴）：進食 需協助切食\n營養 9分（營養不良高風險）：BMI 小於 19\n身體評估：體重 41 kg、脈搏 112 次/分、收縮壓 168 mmHg、舒張壓 96 mmHg";
+  const planReq = (over: Partial<GenerateRequest> = {}) => genReq({ kind: "plan", visitKind: "first", assessment, ...over });
+  /** 只看「三、護理問題與計畫」；其他段落缺少的提醒不算。 */
+  const check = (body: string, req = planReq()) => {
+    const { doc, warnings } = finalizeDoc({ sections: [{ heading: "三、護理問題與計畫", body }] }, req);
+    return { doc, warnings: warnings.filter((w) => !w.includes("缺少")) };
+  };
+  const problems = (body: string) => check(body);
+
+  it("依據行加上全人評估（只有護理計畫）", () => {
+    expect(basisLine(planReq())).toBe("依據：全人評估（5 項）及 2026/10/02 訪視評估");
+    expect(basisLine(planReq({ assessment: null }))).toBe("依據：2026/10/02 訪視評估");
+    expect(basisLine(planReq({ intakeOnly: true }))).toBe("依據：全人評估（5 項）");
+  });
+
+  it("評估中的數字算有來源：「Morse 55 分」不會被當成脈搏而改掉", () => {
+    const body = "問題 1：有跌倒的危險（本次新增）\n　依據：心跳偏快，Morse 55 分（高危險）；步態軟弱。";
+    const { doc, warnings } = problems(body);
+    expect(doc.sections[3].body).toBe(body);
+    expect(warnings).toEqual([]);
+    // 沒有評估時同一句會被改掉
+    const without = check(body, planReq({ assessment: null }));
+    expect(without.doc.sections[3].body).toContain("〔見生命徵象〕");
+  });
+
+  it("身體評估裡的生命徵象不算來源，以本次確認值為準", () => {
+    const { doc, warnings } = problems("問題 1：有跌倒的危險（本次新增）\n　依據：脈搏 112 次/分，血壓 168/96 mmHg。");
+    expect(doc.sections[3].body).not.toMatch(/112|168\/96/);
+    expect(warnings.filter((w) => w.includes("找不到依據的生命徵象數值"))).toHaveLength(2);
+  });
+
+  it("引用評估的分數與等級不提醒 AI 界線；與評估不符的分數照樣提醒", () => {
+    const cited = problems("問題 1：皮膚完整性受損的危險性（本次新增）\n　依據：Braden 12 分（高危險）；ADL 35 分（嚴重依賴）；MNA-SF 9 分（營養不良高風險）。");
+    expect(cited.warnings).toEqual([]);
+    const wrong = problems("問題 1：皮膚完整性受損的危險性（本次新增）\n　依據：Braden 10 分。");
+    expect(wrong.warnings.some((w) => w.includes("量表分數"))).toBe(true);
+    const noSource = check("依據：Braden 12 分；營養不良高風險。", planReq({ assessment: null }));
+    expect(noSource.warnings.some((w) => w.includes("量表分數"))).toBe(true);
+    expect(noSource.warnings.some((w) => w.includes("風險分級"))).toBe(true);
+  });
+
+  it("示範的初次訪視計畫經過檢核後不變、沒有提醒", () => {
+    const a = demoAnalysis({ ...analyzeReq(), transcript: { ...analyzeReq().transcript!, provider: "demo" }, previous: null, currentPlan: null });
+    const confirmed = a.vitals.map((v) => ({ key: v.key, value: v.suggestion ?? v.value, qualifier: v.qualifier }));
+    for (const visitKind of ["first", "follow"] as const) {
+      for (const currentPlan of [null, "問題 1：皮膚完整性受損（沿用）\n　目標：一個月內傷口縮小。\n　措施：(1) 每次訪視換藥。"]) {
+        const req = genReq({ kind: "plan", analysis: a, confirmedVitals: confirmed, adoptedSuggestions: ["s1"], visitKind, assessment: DEMO_ASSESSMENT, currentPlan });
+        const demo = demoGenerate(req);
+        const { doc, warnings } = finalizeDoc(demo, req);
+        expect(warnings, `${visitKind}/${!!currentPlan}`).toEqual([]);
+        expect(doc, `${visitKind}/${!!currentPlan}`).toEqual(demo);
+      }
+    }
   });
 });

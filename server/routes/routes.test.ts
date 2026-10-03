@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
+import { DEMO_ASSESSMENT } from "../../shared/demoAssessment";
 import { DEMO_DURATION_MS, DEMO_SEGMENTS } from "../../shared/demoTranscript";
 import { EDU_CLOSING, PROMPT_VERSION, TRANSLATION_PREFIX } from "../../shared/templates";
 import type { AnalyzeRequest, AnalyzeResponse, GenerateResponse, TranslateResponse } from "../../shared/types";
@@ -56,6 +57,36 @@ describe("AI 路由（示範模式）", () => {
     const tr = await post("/api/translate", { text: doc.sections.map((s) => s.body).join("\n"), lang: "vi" });
     expect(tr.status).toBe(200);
     expect(((await tr.json()) as TranslateResponse).text.startsWith(TRANSLATION_PREFIX.vi)).toBe(true);
+  });
+
+  it("初次訪視：護理計畫依全人評估擬定；評估格式不符回 400", async () => {
+    const { analysis } = (await (await post("/api/analyze", base)).json()) as AnalyzeResponse;
+    const body = {
+      kind: "plan",
+      visitDate: base.visitDate,
+      patient: base.patient,
+      analysis,
+      confirmedVitals: [],
+      currentPlan: null,
+      adoptedSuggestions: [],
+      options: { recordStyle: "four", instructions: [], custom: null, nurseName: null, clinicPhone: null },
+      intakeOnly: false,
+      visitKind: "first",
+      assessment: DEMO_ASSESSMENT,
+    };
+    const res = await post("/api/generate", body);
+    expect(res.status).toBe(200);
+    const { doc, meta, warnings } = (await res.json()) as GenerateResponse;
+    expect(meta.promptVersion).toBe(PROMPT_VERSION);
+    expect(doc.sections[0].body).toBe("依據：全人評估（13 項）及 2026/10/02 訪視評估");
+    expect(doc.sections[3].body).toContain("依據：Braden 11 分（高危險）");
+    expect(warnings ?? []).toEqual([]);
+
+    for (const bad of [{ ...body, visitKind: "second" }, { ...body, assessment: "x".repeat(6001) }]) {
+      const r = await post("/api/generate", bad);
+      expect(r.status).toBe(400);
+      expect(((await r.json()) as { error: { code: string } }).error.code).toBe("bad_request");
+    }
   });
 
   it("錯誤一律是 {error:{code,message,retryable}} 與中文說明", async () => {

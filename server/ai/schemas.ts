@@ -6,6 +6,7 @@
  *    id 由程式補上，`speakers` 以陣列輸出再轉成物件，`flag` 由程式計算。
  */
 import * as z from "zod/v4";
+import { ASSESSMENT_MAX_CHARS } from "../../shared/assessment";
 
 /* ------------------------------ 共用 ------------------------------ */
 
@@ -141,6 +142,9 @@ export const GenerateRequestSchema = z.object({
   }),
   intakeOnly: z.boolean(),
   previous: PreviousSchema.nullable().optional(),
+  /** 沒有時視為再次訪視（舊版前端不會送）。 */
+  visitKind: z.enum(["first", "follow"]).optional(),
+  assessment: z.string().max(ASSESSMENT_MAX_CHARS).nullable().optional(),
 });
 
 export const TranslateRequestSchema = z.object({

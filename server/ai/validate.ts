@@ -3,6 +3,7 @@
  * 繁體關卡、原句定位、數值檢核、手動值覆蓋、輸出格式（K2／K3）、數字白名單、AI 界線與個資掃描。
  */
 import * as OpenCC from "opencc-js/cn2t";
+import { assessmentBasisLabel, assessmentForWriting } from "../../shared/assessment";
 import {
   abnormalValuesLine,
   ensureIds,
@@ -562,11 +563,13 @@ export function finalizeDoc(out: DocOutput, req: GenerateRequest): FinalizeDocRe
   }
 
   // 格式、繁體、個資、數字白名單、AI 界線
-  const allow = buildAllowList(
-    confirmed,
-    req.previous,
-    req.analysis.docFacts.filter((f) => !f.unclear).map((f) => f.text),
-  );
+  // 護理師填寫的全人評估（只交給護理計畫）是數字來源：「Braden 12 分」不算外洩；身體評估的生命徵象不算，以本次確認值為準。
+  const assessment = req.kind === "plan" ? assessmentForWriting(req.assessment) : null;
+  const allow = buildAllowList(confirmed, req.previous, [
+    ...req.analysis.docFacts.filter((f) => !f.unclear).map((f) => f.text),
+    ...(assessment ? [assessment] : []),
+  ]);
+  const sourced = sourcedByAssessment(assessment);
   const name = req.patient.displayName.trim();
   const subject = req.kind === "edu" ? req.patient.familyCallsAs?.trim() || "長輩" : "個案";
   sections = sections.map((s) => {
@@ -581,7 +584,10 @@ export function finalizeDoc(out: DocOutput, req: GenerateRequest): FinalizeDocRe
       warnings.push(`${label}${s.heading ? `「${s.heading}」` : ""}出現找不到依據的生命徵象數值「${leak}」，已改為${NEUTRAL}，請以生命徵象行為準。`);
     }
     for (const [re, what] of BOUNDARY) {
-      if (re.test(text)) warnings.push(`${label}${s.heading ? `「${s.heading}」` : ""}疑似包含${what}，AI 不應自行判定，請確認是否有來源。`);
+      const hits = [...text.matchAll(new RegExp(re.source, `${re.flags}g`))].map((m) => m[0]);
+      if (hits.some((h) => !sourced(h, what))) {
+        warnings.push(`${label}${s.heading ? `「${s.heading}」` : ""}疑似包含${what}，AI 不應自行判定，請確認是否有來源。`);
+      }
     }
     return { heading: s.heading, body: text };
   });
@@ -595,6 +601,24 @@ export function finalizeDoc(out: DocOutput, req: GenerateRequest): FinalizeDocRe
 }
 
 const sec = (heading: string, body: string): DocSection => ({ heading, body });
+
+const compact = (s: string) => s.replace(/\s/g, "");
+
+/**
+ * AI 界線的例外：分數、等級若來自護理師填寫的全人評估就不提醒。
+ * 量表分數看數字是否都出現在評估中（「Braden 12 分」對「Braden 壓傷 12分」）；其他看原字串是否出現在評估中。
+ */
+function sourcedByAssessment(assessment: string | null): (hit: string, what: string) => boolean {
+  if (!assessment) return () => false;
+  const text = compact(assessment);
+  const nums = new Set(numbersInText(assessment));
+  return (hit, what) => {
+    if (text.includes(compact(hit))) return true;
+    if (what !== "量表分數") return false;
+    const n = (hit.match(/\d+(?:\.\d+)?/g) ?? []).map(Number);
+    return n.length > 0 && n.every((x) => nums.has(x));
+  };
+}
 
 function extraSections(extra: DocSection[], warnings: string[], label: string): DocSection[] {
   for (const s of extra) if (s.body.trim()) warnings.push(`${label}有不在模板中的段落「${s.heading || "（無標題）"}」，請確認內容。`);
@@ -626,8 +650,10 @@ export function sourceLine(req: GenerateRequest): string {
 
 export function basisLine(req: GenerateRequest): string {
   const docs = docList(req, false);
-  if (req.intakeOnly) return `依據：${docs ?? "匯入文件"}`;
-  return `依據：${slashDate(req.visitDate)} 訪視評估${docs ? `、${docs}` : ""}`;
+  // 有全人評估時放最前面：「依據：全人評估（13 項）及 2026/10/02 訪視評估」
+  const assessed = assessmentBasisLabel(req.assessment);
+  if (req.intakeOnly) return `依據：${[assessed, docs].filter(Boolean).join("、") || "匯入文件"}`;
+  return `依據：${assessed ? `${assessed}及 ` : ""}${slashDate(req.visitDate)} 訪視評估${docs ? `、${docs}` : ""}`;
 }
 
 /** 「問題 n：」依出現順序重新連號。 */

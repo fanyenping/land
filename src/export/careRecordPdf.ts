@@ -97,6 +97,11 @@ function rowsTable(widths: (number | string)[], body: Content[][]): Node {
   return { table: { widths, body, dontBreakRows: true }, layout: GRID };
 }
 
+/** 緊接在上一張表格下方：上移一條格線寬，讓兩張表的交界只有一條線。 */
+function joined(table: Node): Node {
+  return { ...table, margin: [0, -LINE_W, 0, 0] };
+}
+
 /**
  * 可跨頁的長內容列（照護紀錄、計畫內容、衛教內容）。
  *
@@ -104,15 +109,12 @@ function rowsTable(widths: (number | string)[], body: Content[][]): Node {
  * 因此前面放一個幾乎零高度的守門節點：若標籤或第一段內容沒有和守門節點同頁，
  * pageBreakBefore 就在守門節點前換頁，讓這一列（連同 lead 內容，例如區段標題）從新頁開始。
  */
-function longRow(key: string, widths: (number | string)[], label: string, text: string, lead: Content[] = []): Content[] {
-  return [
-    { text: " ", id: `keep:${key}`, fontSize: 1, lineHeight: 0.01 },
-    ...lead,
-    {
-      table: { widths, body: [[labelCell(label, `${key}:label`), longText(text, `${key}:first`)]] },
-      layout: GRID,
-    },
-  ];
+function longRow(key: string, widths: (number | string)[], label: string, text: string, lead: Content[], join: boolean): Content[] {
+  const table: Node = {
+    table: { widths, body: [[labelCell(label, `${key}:label`), longText(text, `${key}:first`)]] },
+    layout: GRID,
+  };
+  return [{ text: " ", id: `keep:${key}`, fontSize: 1, lineHeight: 0.01 }, ...lead, join ? joined(table) : table];
 }
 
 /** 【區段標題】：固定字串，粗體。 */
@@ -159,8 +161,8 @@ function mainTable(data: CareRecordData): Content[] {
   // 三張欄寬相同的表格上下相接（格線重疊成一條），只有照護紀錄列允許跨頁。
   return [
     rowsTable(MAIN_WIDTHS, rows.map(([label, value]) => [labelCell(label), valueCell(value)])),
-    ...longRow("record", MAIN_WIDTHS, "照護紀錄", m.record),
-    rowsTable(MAIN_WIDTHS, [[labelCell("記錄人員"), valueCell(m.recorder)]]),
+    ...longRow("record", MAIN_WIDTHS, "照護紀錄", m.record, [], true),
+    joined(rowsTable(MAIN_WIDTHS, [[labelCell("記錄人員"), valueCell(m.recorder)]])),
   ];
 }
 
@@ -199,15 +201,15 @@ function planSection(plan: NonNullable<CareRecordData["plan"]>): Content[] {
   // 標題＋版本列＋計畫內容開頭一定同頁。
   const lead = [sectionTitle("【護理計畫】"), rowsTable(SIDE_WIDTHS, [[labelCell("計畫版本"), valueCell(plan.version)]])];
   return [
-    ...longRow("plan", SIDE_WIDTHS, "計畫內容", plan.text, lead),
-    rowsTable(SIDE_WIDTHS, [[labelCell("確認人員"), valueCell(plan.confirmedBy)]]),
+    ...longRow("plan", SIDE_WIDTHS, "計畫內容", plan.text, lead, true),
+    joined(rowsTable(SIDE_WIDTHS, [[labelCell("確認人員"), valueCell(plan.confirmedBy)]])),
   ];
 }
 
 function eduSection(edu: NonNullable<CareRecordData["edu"]>): Content[] {
   return [
-    ...longRow("edu", SIDE_WIDTHS, "衛教內容", edu.text, [sectionTitle("【家屬衛教】")]),
-    rowsTable(SIDE_WIDTHS, [[labelCell("確認人員"), valueCell(edu.confirmedBy)]]),
+    ...longRow("edu", SIDE_WIDTHS, "衛教內容", edu.text, [sectionTitle("【家屬衛教】")], false),
+    joined(rowsTable(SIDE_WIDTHS, [[labelCell("確認人員"), valueCell(edu.confirmedBy)]])),
   ];
 }
 
@@ -215,12 +217,33 @@ interface NodeInfo {
   id?: string;
 }
 
+/**
+ * pdfmake 依 pageBreakBefore 重新排版時，不會清掉上一輪留在表格格子上的 _willBreak／_bottomY
+ * （只在 undefined 時才設定），上下置中會沿用舊值而跑位；所以要求換頁前先清掉。
+ */
+function clearStaleCellState(node: unknown): void {
+  if (Array.isArray(node)) {
+    node.forEach(clearStaleCellState);
+    return;
+  }
+  if (!node || typeof node !== "object") return;
+  const n = node as Node & { table?: { body?: unknown[][] } };
+  delete n._willBreak;
+  delete n._bottomY;
+  n.table?.body?.forEach((row) => row.forEach(clearStaleCellState));
+  if (n.stack) clearStaleCellState(n.stack);
+}
+
 /** 守門節點：同頁後面必須有該列的標籤與第一段內容，否則在它之前換頁。 */
-function pageBreakBefore(node: NodeInfo, nodes: { getFollowingNodesOnPage: () => NodeInfo[] }): boolean {
-  if (!node.id?.startsWith("keep:")) return false;
-  const key = node.id.slice(5);
-  const ids = new Set(nodes.getFollowingNodesOnPage().map((n) => n.id));
-  return !(ids.has(`${key}:label`) && ids.has(`${key}:first`));
+function keepTogether(content: Content[]) {
+  return (node: NodeInfo, nodes: { getFollowingNodesOnPage: () => NodeInfo[] }): boolean => {
+    if (!node.id?.startsWith("keep:")) return false;
+    const key = node.id.slice(5);
+    const ids = new Set(nodes.getFollowingNodesOnPage().map((n) => n.id));
+    if (ids.has(`${key}:label`) && ids.has(`${key}:first`)) return false;
+    clearStaleCellState(content);
+    return true;
+  };
 }
 
 /** pdfmake 文件定義（純資料＋版面函式，不碰 DOM；伺服器端與瀏覽器都能用）。 */
@@ -274,7 +297,7 @@ export function careRecordDocDefinition(data: CareRecordData): Record<string, un
             alignment: "center",
             margin: [0, 16, 0, 0],
           },
-    pageBreakBefore,
+    pageBreakBefore: keepTogether(content),
     content,
   };
 }

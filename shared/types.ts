@@ -234,7 +234,22 @@ export interface GenerateRequest {
   intakeOnly: boolean;
   /** 上次已確認的訪視資料：異常值提醒句「較前次（09/18，132/78 mmHg）上升」用。 */
   previous?: PreviousVisit | null;
+  /** 訪視類型：初次訪視（做 13 張全人評估，護理計畫依評估擬定）或再次訪視；沒有時視為再次訪視。 */
+  visitKind?: VisitKind;
+  /**
+   * 護理師填寫的全人評估摘要（前端整理，一張表一行；計分表只列失分的項目），例如
+   * 「Braden 壓傷 12分（高危險）：感知能力 非常受限、…」。初次訪視的護理計畫依此擬定；再次訪視只當背景。
+   */
+  assessment?: string | null;
 }
+
+/** 初次訪視（first）／再次訪視（follow）。 */
+export type VisitKind = "first" | "follow";
+
+export const VISIT_KIND_LABEL: Record<VisitKind, string> = {
+  first: "初次訪視",
+  follow: "再次訪視",
+};
 
 export interface GenerateResponse {
   doc: GeneratedDoc;

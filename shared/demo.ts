@@ -3,6 +3,7 @@
  * 內容全部虛構；只有示範逐字稿與示範文件會得到完整內容，其他輸入只做誠實的最小整理，不編造事實。
  * 純 TypeScript、無 Node 依賴（前端也會打包）。
  */
+import { assessmentBasisLabel, assessmentHighlights, assessmentRisks, citeScore, type AssessmentRisk } from "./assessment";
 import {
   abnormalValuesLine,
   ensureIds,
@@ -20,6 +21,7 @@ import {
   INTAKE_HEADINGS,
   NOT_ASSESSED_SENTENCE,
   PLAN_HEADINGS,
+  PLAN_MAX_PROBLEMS,
   RECORD_HEADINGS,
   RECORD_NARRATIVE_HEADING,
   TRANSLATION_PREFIX,
@@ -548,6 +550,57 @@ const INTAKE_PROBLEMS: Record<string, { basis: string; goal: string; measures: s
   },
 };
 
+/** 全人評估風險 → 新增問題的目標與措施（依據由評估分數與失分項目組成）。 */
+const RISK_PLANS: Record<string, { goal: string; measures: string[] }> = {
+  有自殺的危險: {
+    goal: "個案於照護期間安全，無自傷行為。",
+    measures: ["本次訪視即與家屬說明，24 小時有人陪伴並移除危險物品。", "協助轉介身心科評估。", "提供安心專線 1925，緊急時撥打 119。"],
+  },
+  皮膚完整性受損的危險性: {
+    goal: "一個月內無新增壓傷。",
+    measures: ["指導照顧者每 2 小時協助翻身，骨突處以軟枕減壓。", "保持皮膚清潔乾燥，失禁後立即清潔。", "每次訪視檢查受壓部位皮膚。"],
+  },
+  有跌倒的危險: {
+    goal: "一個月內無跌倒。",
+    measures: ["評估居家環境，移除地面障礙物、夜間保持照明。", "指導起身時先坐穩再站，行走時使用輔具並有人陪同。", "床邊放置叫人鈴或手機，方便呼叫家屬。"],
+  },
+  "營養不均衡（少於身體需要）": {
+    goal: "一個月內體重不再下降。",
+    measures: ["記錄每日進食量，每週量體重一次。", "少量多餐，增加蛋白質攝取。", "必要時轉介營養師評估。"],
+  },
+  疼痛: {
+    goal: "一週內疼痛減輕，個案或家屬表示可以休息與活動。",
+    measures: ["每次訪視評估疼痛部位、性質與強度。", "指導非藥物緩解方法：熱敷、按摩、調整姿勢。", "疼痛加劇或無法緩解時聯絡護理師，評估是否需要回診。"],
+  },
+  自我照顧能力缺失: {
+    goal: "一個月內照顧者能正確協助個案進食、移位與如廁。",
+    measures: ["依失分項目指導照顧者協助進食、移位及如廁的方法。", "鼓勵個案在能力範圍內自行完成部分活動。", "評估是否需要輔具或長照服務。"],
+  },
+  記憶障礙: {
+    goal: "一個月內家屬能說出並執行安全照顧措施。",
+    measures: ["以簡短、一次一件事的方式溝通，維持固定作息。", "藥物由家屬保管並協助服藥。", "必要時轉介神經內科或失智共照中心評估。"],
+  },
+  "焦慮／憂鬱": {
+    goal: "兩週內個案能說出情緒困擾，並接受家屬陪伴。",
+    measures: ["每次訪視追蹤情緒與睡眠。", "鼓勵家屬陪伴與傾聽，安排個案喜歡的活動。", "情緒困擾加重或出現自殺意念時，立即轉介身心科。"],
+  },
+  衰弱: {
+    goal: "三個月內維持活動功能，無跌倒。",
+    measures: ["指導每日漸進式肌力運動，例如坐站練習。", "增加蛋白質攝取。", "評估是否轉介居家復能。"],
+  },
+  藥物使用安全: {
+    goal: "一個月內家屬能正確說出主要用藥的用法與注意事項。",
+    measures: ["整理目前用藥清單，核對藥袋與服藥方式。", "使用分藥盒，由家屬協助服藥。", "觀察出血、低血糖等副作用，異常時聯絡護理師。"],
+  },
+};
+
+const riskBasis = (r: AssessmentRisk) => `${r.cite}${r.items.length ? `；${r.items.join("、")}` : ""}。`;
+/** 未列入計畫的風險：「有跌倒的危險（Morse 55 分）」「營養不均衡（少於身體需要，MNA-SF 9 分）」。 */
+function riskNote(r: AssessmentRisk): string {
+  const cite = r.rule.form === "meds" ? r.cite : citeScore(r.item, false);
+  return r.rule.problem.endsWith("）") ? r.rule.problem.replace(/）$/, `，${cite}）`) : `${r.rule.problem}（${cite}）`;
+}
+
 function newProblemBlock(
   title: string,
   spec: { basis: string; goal: string; measures: string[] } | null,
@@ -584,10 +637,13 @@ function planSections(c: Ctx): DocSection[] {
   const concise = c.wants("更精簡");
   const intake = c.req.intakeOnly;
   const docs = docSourceText(a, false);
-  const basisLine = intake ? `依據：${docs ?? "匯入文件"}` : `依據：${slashDate(c.date)} 訪視評估${docs ? `、${docs}` : ""}`;
+  const assessed = assessmentBasisLabel(c.req.assessment);
+  const basisLine = intake
+    ? `依據：${[assessed, docs].filter(Boolean).join("、") || "匯入文件"}`
+    : `依據：${assessed ? `${assessed}及 ` : ""}${slashDate(c.date)} 訪視評估${docs ? `、${docs}` : ""}`;
   const followUp = c.nextVisit ? `${slashDate(c.nextVisit)} 訪視時評估。` : "下次訪視時評估。";
 
-  // 三、護理問題
+  // 三、護理問題：沿用 →（全人評估風險）→ 逐字稿與已採用的建議
   const blocks: ProblemBlock[] = [];
   const carried = intake ? [] : parsePlanProblems(c.req.currentPlan);
   for (const p of carried) {
@@ -600,20 +656,51 @@ function planSections(c: Ctx): DocSection[] {
     ];
     blocks.push({ title: p.title, tag: "沿用", lines, adjusted: !!adjust });
   }
+  const derived: ProblemBlock[] = [];
   if (carried.length === 0 && (c.demoVisit || c.demoIntake)) {
     const table = intake ? INTAKE_PROBLEMS : NEW_PROBLEMS;
     const base = intake
       ? Object.keys(INTAKE_PROBLEMS)
       : ["皮膚完整性受損（薦骨壓傷）", "有吸入的危險（鼻胃管灌食）"];
     for (const title of base) {
-      blocks.push(newProblemBlock(title, table[title], null, intake ? "待首次訪視評估。" : followUp, concise));
+      derived.push(newProblemBlock(title, table[title], null, intake ? "待首次訪視評估。" : followUp, concise));
     }
   }
   for (const s of adoptedSuggestions(c)) {
-    if (blocks.some((b) => b.title === s.problem)) continue;
-    blocks.push(newProblemBlock(s.problem, c.demoVisit ? (NEW_PROBLEMS[s.problem] ?? null) : null, s.basis, followUp, concise));
+    if ([...blocks, ...derived].some((b) => b.title === s.problem)) continue;
+    derived.push(newProblemBlock(s.problem, c.demoVisit ? (NEW_PROBLEMS[s.problem] ?? null) : null, s.basis, followUp, concise));
   }
-  const problems = blocks.slice(0, 5);
+
+  // 全人評估：初次訪視或擬定第 1 版時，依評估風險擬定（同類問題與逐字稿的問題合併，依據引用分數）；
+  // 再次訪視（已有計畫）只當背景，現行計畫未涵蓋的風險列在「五」請護理師決定。
+  const risks = assessmentRisks(c.req.assessment);
+  const fromAssessment = risks.length > 0 && (c.req.visitKind === "first" || carried.length === 0);
+  const riskBlocks: [AssessmentRisk, ProblemBlock][] = [];
+  if (fromAssessment) {
+    for (const r of risks) {
+      if (blocks.some((b) => r.rule.covers.test(b.title))) continue;
+      const hit = derived.find((b) => r.rule.covers.test(b.title) && !riskBlocks.some(([, x]) => x === b));
+      if (hit) {
+        hit.lines[0] = hit.lines[0].replace(/^依據：/, `依據：${r.cite}；`);
+        riskBlocks.push([r, hit]);
+      } else {
+        const plan = RISK_PLANS[r.rule.problem] ?? null;
+        const spec = plan ? { ...plan, basis: riskBasis(r) } : null;
+        riskBlocks.push([r, newProblemBlock(r.rule.problem, spec, riskBasis(r), intake ? "待首次訪視評估。" : followUp, concise)]);
+      }
+    }
+  }
+  const merged = riskBlocks.map(([, b]) => b);
+  blocks.push(...merged, ...derived.filter((b) => !merged.includes(b)));
+  const problems = blocks.slice(0, PLAN_MAX_PROBLEMS);
+  // 有全人評估時才提醒（沒有評估時維持原本的輸出）：超過題數上限而沒列入的、再次訪視現行計畫沒涵蓋的風險
+  const overflow = risks.length
+    ? blocks.slice(PLAN_MAX_PROBLEMS).map((b) => {
+        const r = riskBlocks.find(([, x]) => x === b)?.[0];
+        return r && r.rule.problem === b.title ? riskNote(r) : b.title;
+      })
+    : [];
+  const uncovered = fromAssessment ? [] : risks.filter((r) => !problems.some((b) => r.rule.covers.test(b.title)));
   const problemText = problems.length
     ? problems.map((b, i) => [`問題 ${i + 1}：${b.title}（${b.tag}）`, ...b.lines.map((l) => `　${l}`)].join("\n")).join("\n")
     : "本次未提出護理問題，請護理師擬定。";
@@ -624,9 +711,13 @@ function planSections(c: Ctx): DocSection[] {
   const adjusted = idx((b) => b.tag === "沿用" && b.adjusted);
   const kept = idx((b) => b.tag === "沿用" && !b.adjusted);
   const added = idx((b) => b.tag === "本次新增");
-  const summary =
+  const firstVisit = c.req.visitKind === "first";
+  const drafted = fromAssessment ? `依全人評估${intake ? "" : "及本次訪視評估"}` : "";
+  let summary =
     carried.length === 0
-      ? "首次擬定，下次訪視評值。"
+      ? firstVisit
+        ? `初次訪視，${drafted}首次擬定，下次訪視評值。`
+        : `${drafted}首次擬定，下次訪視評值。`
       : [
           adjusted.length ? `${adjusted.join("、")} 沿用並調整措施` : null,
           kept.length ? `${kept.join("、")} 沿用` : null,
@@ -634,6 +725,8 @@ function planSections(c: Ctx): DocSection[] {
         ]
           .filter(Boolean)
           .join("；") + "。";
+  if (overflow.length) summary += `\n超過 ${PLAN_MAX_PROBLEMS} 題未列入：${overflow.join("、")}，請護理師決定是否納入。`;
+  if (uncovered.length) summary += `\n全人評估另有風險，現行計畫未涵蓋：${uncovered.map(riskNote).join("、")}，請護理師評估是否納入。`;
 
   // 一、評估摘要；二、疾病診斷與異常值
   const assessment = c.demoVisit
@@ -656,6 +749,15 @@ function planSections(c: Ctx): DocSection[] {
           `社會：${a.findings.filter((f) => /社會/.test(f.domain)).map((f) => f.text).join("；") || "本次未評估"}。`,
           "靈性：本次未評估。",
         ];
+  // 全人評估的分數重點附在身體、心理兩行
+  const highlights = assessmentHighlights(c.req.assessment);
+  const withScores = (line: string, cites: string[]) => {
+    if (!cites.length) return line;
+    const add = `依全人評估，${cites.join("、")}。`;
+    return line.includes(NOT_ASSESSED_SENTENCE.replace(/。$/, "")) ? `${line.slice(0, 3)}${add}` : `${line}${add}`;
+  };
+  assessment[0] = withScores(assessment[0], highlights.body);
+  assessment[1] = withScores(assessment[1], highlights.mind);
   const diagnoses = docDiagnoses(a);
   const doc0 = a.documents[0];
   const diagnosisLine = diagnoses.length

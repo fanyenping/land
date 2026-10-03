@@ -2,10 +2,11 @@
  * ⑥ 撰寫（每份獨立請求，前端平行呼叫三次）＋ ⑦ 輸出檢核。
  * 撰寫只看得到檢核過的事實，看不到逐字稿；生命徵象只給判讀（偏高／偏低），不給數值。
  */
+import { assessmentFormCount, assessmentForWriting } from "../../shared/assessment";
 import { computeFlag, isPlausible, vitalAlertLines, vitalLabel } from "../../shared/clinical";
 import { demoGenerate } from "../../shared/demo";
 import { PROMPT_VERSION, addDays, slashDate, weekday } from "../../shared/templates";
-import type { Analysis, GenerateRequest, GenerateResponse } from "../../shared/types";
+import { VISIT_KIND_LABEL, type Analysis, type GenerateRequest, type GenerateResponse } from "../../shared/types";
 import { callStructured, type Effort } from "./claude";
 import { MODEL, hasCredentials } from "./client";
 import { EDU, PLAN, RECORD_FOUR, RECORD_INTAKE, RECORD_NARRATIVE, WRITING_COMMON } from "./prompts";
@@ -14,7 +15,11 @@ import { finalizeDoc } from "./validate";
 
 function taskFor(req: GenerateRequest): { prompt: string; title: string; effort: Effort } {
   if (req.kind === "plan") {
-    return { prompt: PLAN, title: req.currentPlan ? "護理計畫（沿用＋本次評值）" : "護理計畫（第 1 版）", effort: "medium" };
+    const fromAssessment = req.visitKind === "first" && !!req.assessment?.trim();
+    const title = req.currentPlan
+      ? `護理計畫（沿用＋本次評值${fromAssessment ? "，依全人評估補充新增" : ""}）`
+      : `護理計畫（第 1 版${fromAssessment ? "，依全人評估擬定" : ""}）`;
+    return { prompt: PLAN, title, effort: "medium" };
   }
   if (req.kind === "edu") return { prompt: EDU, title: "家屬衛教", effort: "low" };
   if (req.intakeOnly) return { prompt: RECORD_INTAKE, title: "收案紀錄（依文件整理）", effort: "low" };
@@ -74,8 +79,14 @@ export function buildGenerationText(req: GenerateRequest): string {
     ["一個月後", 30],
   ] as const;
   const who = [p.gender, p.age !== null ? `${p.age} 歲` : null].filter(Boolean).join("，") || "未提供";
+  // 全人評估只給護理計畫（初次訪視依此擬定，再次訪視當背景）；身體評估的生命徵象先移除，以本次確認值為準。
+  const assessment = req.kind === "plan" ? assessmentForWriting(req.assessment) : null;
+  // 沒有 visitKind 視為再次訪視；舊版前端（沒有 visitKind 也沒有評估）不加這一行，提示詞與之前相同。家屬衛教不需要。
+  const kind = req.visitKind ?? (assessment ? "follow" : null);
+  const visitKind = kind && req.kind !== "edu" ? `\n訪視類型：${VISIT_KIND_LABEL[kind]}` : "";
+  const assessedForms = req.kind === "record" && req.visitKind === "first" ? assessmentFormCount(req.assessment) : 0;
   const parts: string[] = [
-    `<撰寫設定>\n文件：${taskFor(req).title}\n</撰寫設定>`,
+    `<撰寫設定>\n文件：${taskFor(req).title}${visitKind}\n</撰寫設定>`,
     [
       "<訪視資訊>",
       `訪視日期：${slashDate(req.visitDate)}${day ? `（${day}）` : ""}`,
@@ -83,6 +94,7 @@ export function buildGenerationText(req: GenerateRequest): string {
       `個案：${who}${p.familyCallsAs ? `；家屬稱呼個案為「${p.familyCallsAs}」` : ""}`,
       `個案資料中的診斷：${p.diagnoses.join("、") || "未提供"}`,
       `個案資料中的已知管路：${p.tubes.map((t) => t.name).join("、") || "無"}`,
+      ...(assessedForms ? [`全人評估：本次完成 ${assessedForms} 項（分數與護理問題寫在護理計畫，紀錄不需逐項列出分數）`] : []),
       "</訪視資訊>",
     ].join("\n"),
     vitalsBlock(req),
@@ -90,6 +102,9 @@ export function buildGenerationText(req: GenerateRequest): string {
   ];
   if (req.previous && req.kind !== "edu") {
     parts.push(`<上次訪視 日期="${req.previous.date}">\n重點：${req.previous.summary}\n發現：${req.previous.findings.join("；") || "無"}\n</上次訪視>`);
+  }
+  if (assessment) {
+    parts.push(`<全人評估（護理師填寫）>\n${assessment}\n</全人評估（護理師填寫）>`);
   }
   if (req.kind === "plan") {
     parts.push(req.currentPlan ? `<現行護理計畫>\n${req.currentPlan}\n</現行護理計畫>` : "<現行護理計畫>無（請擬定第 1 版）</現行護理計畫>");

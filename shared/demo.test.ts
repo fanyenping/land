@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { demoAnalysis, demoGenerate, demoTranslate } from "./demo";
+import { DEMO_ASSESSMENT } from "./demoAssessment";
 import { DEMO_DURATION_MS, DEMO_SEGMENTS } from "./demoTranscript";
-import { EDU_CLOSING, EDU_HEADINGS, INTAKE_HEADINGS, PLAN_HEADINGS, RECORD_HEADINGS, TRANSLATION_PREFIX } from "./templates";
+import { EDU_CLOSING, EDU_HEADINGS, INTAKE_HEADINGS, PLAN_HEADINGS, PLAN_MAX_PROBLEMS, RECORD_HEADINGS, TRANSLATION_PREFIX, parsePlanProblems } from "./templates";
 import type { Analysis, AnalyzeRequest, GenerateRequest, PatientContext, PreviousVisit, TranslateLang } from "./types";
 
 const patient: PatientContext = {
@@ -260,6 +261,84 @@ describe("demoGenerate", () => {
     const simple = demoGenerate(genReq(a, { kind: "edu", options: { ...genReq(a).options, instructions: ["家屬更好懂"] } }));
     expect(chars(text(short))).toBeLessThan(chars(text(base)));
     expect(simple.sections[2].body.split("\n").length).toBeGreaterThan(base.sections[2].body.split("\n").length);
+  });
+});
+
+describe("demoGenerate：全人評估（初次訪視）", () => {
+  const first = demoAnalysis(analyzeReq({ previous: null, currentPlan: null }));
+  const firstReq = (over: Partial<GenerateRequest> = {}) =>
+    genReq(first, { kind: "plan", currentPlan: null, previous: null, visitKind: "first", assessment: DEMO_ASSESSMENT, ...over });
+
+  it("依評估風險擬定問題，與逐字稿的同類問題合併，依據引用分數，最多 5 題", () => {
+    const plan = demoGenerate(firstReq());
+    expect(plan.sections.map((s) => s.heading)).toEqual(["", ...PLAN_HEADINGS]);
+    expect(plan.sections[0].body).toBe("依據：全人評估（13 項）及 2026/10/02 訪視評估");
+    const problems = parsePlanProblems(plan.sections[3].body);
+    expect(problems.map((p) => p.title)).toEqual(["皮膚完整性受損（薦骨壓傷）", "營養不均衡（少於身體需要）", "自我照顧能力缺失", "記憶障礙", "衰弱"]);
+    expect(problems).toHaveLength(PLAN_MAX_PROBLEMS);
+    expect(problems.every((p) => p.tag === "本次新增")).toBe(true);
+    expect(problems.map((p) => p.basis?.split("；")[0])).toEqual([
+      "Braden 11 分（高危險）",
+      "MNA-SF 5 分（營養不良）",
+      "ADL 10 分（完全依賴）",
+      "SPMSQ 5 分（中度障礙）",
+      "Fried 5 項（衰弱）",
+    ]);
+    // 合併的問題保留今天的事實
+    expect(problems[0].basis).toContain("薦骨壓傷約 2×1.5 公分");
+    expect(problems[1].basis).toContain("過去三個月體重減輕 1～3 公斤");
+    expect(problems.every((p) => p.goal && p.measures.length >= 2)).toBe(true);
+    // 未達門檻的表不列（跌倒 15 分、疼痛 2 分、情緒 3 分）
+    expect(plan.sections[3].body).not.toMatch(/跌倒的危險|疼痛（本次新增）|焦慮/);
+  });
+
+  it("「五」說明首次擬定，並列出超過題數而未列入的問題", () => {
+    const summary = demoGenerate(firstReq()).sections[5].body.split("\n");
+    expect(summary[0]).toBe("初次訪視，依全人評估及本次訪視評估首次擬定，下次訪視評值。");
+    expect(summary[1]).toBe("超過 5 題未列入：藥物使用安全（藥物安全評估）、有吸入的危險（鼻胃管灌食），請護理師決定是否納入。");
+    // 沒有評估的初次訪視也說明是首次擬定
+    expect(demoGenerate(firstReq({ assessment: null })).sections[5].body).toBe("初次訪視，首次擬定，下次訪視評值。");
+  });
+
+  it("評估摘要附上分數重點；已採用的建議照常列入", () => {
+    const plan = demoGenerate(firstReq({ assessment: "Braden 壓傷 12分（高危險）：活動能力 臥床\n認知 4分（輕度障礙）", adoptedSuggestions: ["呼吸道清除功能失效"] }));
+    const [body, mind] = plan.sections[1].body.split("\n");
+    expect(body).toMatch(/。依全人評估，Braden 12 分（高危險）。$/);
+    expect(mind).toMatch(/。依全人評估，SPMSQ 4 分（輕度障礙）。$/);
+    expect(parsePlanProblems(plan.sections[3].body).map((p) => p.title)).toEqual([
+      "皮膚完整性受損（薦骨壓傷）",
+      "記憶障礙",
+      "有吸入的危險（鼻胃管灌食）",
+      "呼吸道清除功能失效",
+    ]);
+    expect(plan.sections[0].body).toBe("依據：全人評估（2 項）及 2026/10/02 訪視評估");
+  });
+
+  it("再次訪視（已有計畫）：評估只當背景，不自動新增問題，在「五」提醒", () => {
+    const a = demoAnalysis(analyzeReq());
+    const plan = demoGenerate(genReq(a, { kind: "plan", visitKind: "follow", assessment: DEMO_ASSESSMENT }));
+    const before = demoGenerate(genReq(a, { kind: "plan" }));
+    expect(plan.sections[3].body).toBe(before.sections[3].body);
+    expect(plan.sections[5].body.split("\n")[0]).toBe(before.sections[5].body);
+    expect(plan.sections[5].body).toContain("全人評估另有風險，現行計畫未涵蓋：自我照顧能力缺失（ADL 10 分）、記憶障礙（SPMSQ 5 分）、衰弱（Fried 5 項）、藥物使用安全（藥物安全評估）");
+    // 現行計畫已有的同類問題（壓傷、營養）不再提醒
+    expect(plan.sections[5].body).not.toMatch(/Braden|MNA-SF/);
+  });
+
+  it("只有文件（收案）時評值寫待首次訪視評估", () => {
+    const intake = demoAnalysis(analyzeReq({ transcript: null, documents: [{ name: "a.pdf", mimeType: "application/pdf", data: "JVBERi0=" }], previous: null, currentPlan: null }));
+    const plan = demoGenerate(genReq(intake, { kind: "plan", currentPlan: null, intakeOnly: true, confirmedVitals: [], visitKind: "first", assessment: DEMO_ASSESSMENT }));
+    expect(plan.sections[0].body).toBe("依據：全人評估（13 項）、出院病歷摘要（2026/09/28）");
+    expect(plan.sections[3].body).toContain("問題 1：皮膚完整性受損（薦骨壓傷）（本次新增）\n　依據：Braden 11 分（高危險）；依病摘第 5 頁有薦骨壓傷");
+    expect(plan.sections[3].body).toContain("評值：待首次訪視評估。");
+  });
+
+  it("沒有評估時輸出不變；護理紀錄與衛教不受評估影響", () => {
+    for (const kind of ["record", "plan", "edu"] as const) {
+      const plain = demoGenerate(genReq(first, { kind, currentPlan: null }));
+      expect(demoGenerate(genReq(first, { kind, currentPlan: null, assessment: null, visitKind: "follow" })), kind).toEqual(plain);
+      if (kind !== "plan") expect(demoGenerate(genReq(first, { kind, currentPlan: null, assessment: DEMO_ASSESSMENT, visitKind: "first" })), kind).toEqual(plain);
+    }
   });
 });
 
