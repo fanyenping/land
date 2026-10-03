@@ -6,7 +6,7 @@ import { Critter } from "../components/Critter";
 import { Name, RevealButton } from "../components/Name";
 import { Sheet } from "../components/Sheet";
 import { useToast } from "../components/Toast";
-import { Button, Field, Pill, RoundButton, inputClass } from "../components/ui";
+import { Button, Chip, Field, Pill, RoundButton, inputClass } from "../components/ui";
 import { consentValid, deletePatient, recordConsent, scheduleVisit } from "../lib/actions";
 import { writeClipboard } from "../lib/compose";
 import { updatePatient } from "../lib/db";
@@ -48,6 +48,10 @@ export function PatientDetail() {
   const sorted = [...visits].sort((a, b) => (b.date + (b.time ?? "")).localeCompare(a.date + (a.time ?? "")));
   const valid = consentValid(patient);
   const assessed = completedCount(patient.assessment) === 13;
+  // 真正的初訪（沒有評估、計畫、訪視）才把全人評估放最上面。
+  const firstVisit = !assessed && !patient.plan && !patient.last;
+  // 已在今日清單上就不再顯示「加入今日」。
+  const onToday = sorted.some((v) => v.date === todayStr());
 
   return (
     <div className="mx-auto w-full max-w-[880px] px-4 pt-[max(env(safe-area-inset-top),16px)] md:px-8 lg:pt-8">
@@ -72,7 +76,7 @@ export function PatientDetail() {
             <h1 className="truncate font-round text-[2rem] font-extrabold leading-tight">
               <Name name={patient.name} />
             </h1>
-            <p className="font-bold opacity-80">{[age ? `${age} 歲` : null, patient.gender, patient.familyCallsAs ? `家屬稱「${patient.familyCallsAs}」` : null].filter(Boolean).join(" · ")}</p>
+            <p className="font-bold opacity-80">{[age ? `${age} 歲` : null, patient.gender, patient.familyCallsAs ? `「${patient.familyCallsAs}」` : null].filter(Boolean).join(" · ")}</p>
           </div>
         </div>
         {patient.diagnoses.length > 0 && (
@@ -86,34 +90,36 @@ export function PatientDetail() {
         )}
       </section>
 
-      {/* 新個案（還沒完成全人評估）把評估放在最前面：初次訪視要先做 13 張。 */}
-      {!assessed && (
+      {/* 新個案的初次訪視要先做 13 張評估：放在最前面，「開始錄音」改成次要按鈕，畫面上只有一顆黑色主按鈕。 */}
+      {firstVisit && (
         <div className="mb-4">
           <AssessmentCard patient={patient} highlight />
         </div>
       )}
 
       <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Button variant="primary" size="lg" className="col-span-2" icon={<Mic size={22} />} onClick={() => flows.record(patient)}>
+        <Button variant={firstVisit ? "secondary" : "primary"} size="lg" className="col-span-2" icon={<Mic size={22} />} onClick={() => flows.record(patient)}>
           開始錄音
         </Button>
-        <Button
-          size="lg"
-          icon={<CalendarPlus size={20} />}
-          onClick={async () => {
-            await scheduleVisit(patient.id, todayStr(), null);
-            toast("已加入今日");
-          }}
-        >
-          加入今日
-        </Button>
-        <Button size="lg" icon={<FileUp size={20} />} onClick={() => flows.openNew(patient)}>
+        {!onToday && (
+          <Button
+            size="lg"
+            icon={<CalendarPlus size={20} />}
+            onClick={async () => {
+              await scheduleVisit(patient.id, todayStr(), null);
+              toast("已加入今日");
+            }}
+          >
+            加入今日
+          </Button>
+        )}
+        <Button size="lg" className={onToday ? "col-span-2" : undefined} icon={<FileUp size={20} />} onClick={() => flows.openNew(patient)}>
           匯入
         </Button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        {assessed && (
+        {!firstVisit && (
           <div className="md:col-span-2">
             <AssessmentCard patient={patient} />
           </div>
@@ -122,7 +128,7 @@ export function PatientDetail() {
           {valid ? (
             <>
               <p className="font-bold">
-                {patient.consent!.by}同意・{shortDate(patient.consent!.at.slice(0, 10))}，效期到 {shortDate(patient.consent!.expiresAt)}
+                {patient.consent!.by}同意・至 {shortDate(patient.consent!.expiresAt)}
               </p>
               <Button
                 className="mt-3"
@@ -137,7 +143,7 @@ export function PatientDetail() {
             </>
           ) : (
             <>
-              <p className="font-bold text-ink-soft">{patient.consentRefusedAt ? `${shortDate(patient.consentRefusedAt.slice(0, 10))} 表示不同意錄音` : "尚未記錄"}</p>
+              <p className="font-bold text-ink-soft">{patient.consentRefusedAt ? `${shortDate(patient.consentRefusedAt.slice(0, 10))} 表示不同意錄音` : "尚未取得"}</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <Button size="sm" onClick={() => recordConsent(patient.id, "個案本人")}>
                   個案本人同意
@@ -154,7 +160,7 @@ export function PatientDetail() {
           {patient.plan ? (
             <>
               <p className="text-[0.95rem] text-ink-soft">
-                {shortDate(patient.plan.confirmedAt.slice(0, 10))} 由 {patient.plan.by} 確認
+                {shortDate(patient.plan.confirmedAt.slice(0, 10))} {patient.plan.by}確認
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <Button size="sm" onClick={() => setShowPlan(true)}>
@@ -173,7 +179,7 @@ export function PatientDetail() {
               </div>
             </>
           ) : (
-            <p className="text-ink-soft">確認第一份護理計畫後會出現在這裡</p>
+            <p className="text-ink-soft">尚無計畫</p>
           )}
         </Card>
 
@@ -186,7 +192,7 @@ export function PatientDetail() {
           }
         >
           {patient.tubes.length === 0 ? (
-            <p className="text-ink-soft">沒有記錄管路</p>
+            <p className="text-ink-soft">無管路</p>
           ) : (
             <ul className="flex flex-col gap-2">
               {patient.tubes.map((t) => {
@@ -206,27 +212,25 @@ export function PatientDetail() {
           )}
         </Card>
 
-        <Card title="上次重點">
-          {patient.last ? (
-            <>
-              <p className="font-bold">{shortDate(patient.last.date)}：{patient.last.summary}</p>
-              {patient.last.findings.length > 0 && (
-                <ul className="mt-2 list-disc pl-5 text-[0.98rem] text-ink-soft">
-                  {patient.last.findings.map((f) => (
-                    <li key={f}>{f}</li>
-                  ))}
-                </ul>
-              )}
-            </>
-          ) : (
-            <p className="text-ink-soft">還沒有完成的訪視</p>
-          )}
-        </Card>
+        {patient.last && (
+          <Card title="上次重點">
+            <p className="font-bold">
+              {shortDate(patient.last.date)}：{patient.last.summary}
+            </p>
+            {patient.last.findings.length > 0 && (
+              <ul className="mt-2 list-disc pl-5 text-[0.98rem] text-ink-soft">
+                {patient.last.findings.map((f) => (
+                  <li key={f}>{f}</li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        )}
       </div>
 
       <h2 className="mb-3 mt-6 font-round text-[1.4rem] font-extrabold">歷次訪視</h2>
       {sorted.length === 0 ? (
-        <p className="rounded-[22px] bg-card p-4 text-ink-soft outline-ink">還沒有訪視紀錄</p>
+        <p className="rounded-[22px] bg-card p-4 text-ink-soft outline-ink">尚無訪視</p>
       ) : (
         <div className="flex flex-col gap-2">
           {sorted.map((v) => {
@@ -255,7 +259,7 @@ export function PatientDetail() {
           toast("已刪除個案", undo ? { action: { label: "復原", run: () => void undo() } } : undefined);
         }}
       >
-        刪除這位個案與所有紀錄
+        刪除個案及記錄
       </Button>
 
       <TubeSheet patient={patient} tube={tube} onClose={() => setTube(null)} />
@@ -313,17 +317,16 @@ function TubeForm({ patient, tube, onDone }: { patient: Patient; tube: Tube | nu
       {!tube && (
         <div className="flex flex-wrap gap-2">
           {TUBE_PRESETS.map(([n, d]) => (
-            <button
+            <Chip
               key={n}
-              type="button"
+              active={name === n}
               onClick={() => {
                 setName(n);
                 setIntervalDays(String(d));
               }}
-              className="min-h-[44px] rounded-full bg-card px-4 font-bold outline-ink"
             >
               {n}
-            </button>
+            </Chip>
           ))}
         </div>
       )}
@@ -352,7 +355,7 @@ function TubeForm({ patient, tube, onDone }: { patient: Patient; tube: Tube | nu
             onDone();
           }}
         >
-          移除這條管路
+          移除管路
         </Button>
       )}
     </div>

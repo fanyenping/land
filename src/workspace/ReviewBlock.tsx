@@ -13,8 +13,11 @@ import { pendingVitals } from "../lib/vitals";
 
 const CHANGE_LABEL = { new: "新", worse: "加重", better: "改善", resolved: "緩解" } as const;
 
-/** 先看這裡：全 App 唯一的關卡（身分、待確認數值、文件重點、評估異動）。 */
-export function ReviewBlock({ visit, patient, onEditVital }: { visit: Visit; patient: Patient; onEditVital: (key: VitalReading["key"]) => void }) {
+/**
+ * 先看這裡：全 App 唯一的關卡（身分、待確認數值、文件重點、評估異動）。
+ * bare：放在「複製前先處理」面板裡時，不要自己的標題與外框（面板標題已經說了）。
+ */
+export function ReviewBlock({ visit, patient, onEditVital, bare }: { visit: Visit; patient: Patient; onEditVital: (key: VitalReading["key"]) => void; bare?: boolean }) {
   const flows = useFlows();
   const a = visit.analysis;
   if (!a) return null;
@@ -29,10 +32,12 @@ export function ReviewBlock({ visit, patient, onEditVital }: { visit: Visit; pat
   const count = (identity ? 1 : 0) + vitals.length + conflicts.length + (needDocs ? 1 : 0) + (needChanges ? 1 : 0);
 
   if (count === 0) {
+    // 已完成的訪視上方已有「已完成」橫條，不再重複一條「已核對」。
+    if (visit.status === "done") return null;
     const who = visit.changesConfirmed?.by ?? visit.reviewedBy;
     const when = visit.changesConfirmed?.at ?? visit.reviewedAt;
     return (
-      <div id="sec-check" className="flex items-center gap-3 rounded-[24px] bg-ok-tint px-4 py-3 font-bold text-ok">
+      <div id={bare ? undefined : "sec-check"} className="flex items-center gap-3 rounded-[24px] bg-ok-tint px-4 py-3 font-bold text-ok">
         <Critter kind="done" size={34} />
         <span>{who ? `已核對・${who} ${clock(when)}` : "沒有需要確認的項目"}</span>
       </div>
@@ -40,14 +45,20 @@ export function ReviewBlock({ visit, patient, onEditVital }: { visit: Visit; pat
   }
 
   return (
-    <section id="sec-check" aria-label="先看這裡" className="scroll-mt-32 rounded-[28px] bg-pending-tint p-4 outline-ink md:p-5">
-      <h2 className="mb-3 flex items-center gap-2 font-round text-[1.35rem] font-extrabold">
-        <Critter kind="pending" size={38} />
-        先看這裡
-        <Pill tone="pending" className="outline-ink">
-          {count} 件要處理
-        </Pill>
-      </h2>
+    <section
+      id={bare ? undefined : "sec-check"}
+      aria-label="先看這裡"
+      className={bare ? undefined : "scroll-mt-32 rounded-[28px] bg-pending-tint p-4 outline-ink md:p-5"}
+    >
+      {!bare && (
+        <h2 className="mb-3 flex items-center gap-2 font-round text-[1.35rem] font-extrabold">
+          <Critter kind="pending" size={38} />
+          先看這裡
+          <Pill tone="pending" className="outline-ink">
+            {count} 件
+          </Pill>
+        </h2>
+      )}
       <div className="flex flex-col gap-3">
         {identity && (
           <Item>
@@ -85,7 +96,7 @@ export function ReviewBlock({ visit, patient, onEditVital }: { visit: Visit; pat
 
         {needDocs && (
           <Item>
-            <p className="font-bold">文件中有 {unclear.length} 項字跡不清或不確定，不會寫入輸出：</p>
+            <p className="font-bold">{unclear.length} 項字跡不清，不會寫入：</p>
             <ul className="mt-2 flex flex-col gap-1.5">
               {unclear.map((f) => (
                 <li key={f.id} className="text-[1rem]">
@@ -112,10 +123,10 @@ export function ReviewBlock({ visit, patient, onEditVital }: { visit: Visit; pat
                   <span className="min-w-0 flex-1 text-[1rem]">
                     {c.text}
                     {c.evidence && <span className="block text-[0.9rem] text-ink-soft">「{c.evidence}」</span>}
+                    <button type="button" onClick={() => dismissChange(visit.id, c.id)} className="-ml-3 mt-0.5 block min-h-[40px] rounded-full px-3 text-[0.9rem] font-bold text-ink-soft hover:bg-ink/5">
+                      不是異動
+                    </button>
                   </span>
-                  <button type="button" onClick={() => dismissChange(visit.id, c.id)} className="min-h-[40px] shrink-0 rounded-full px-3 text-[0.9rem] font-bold text-ink-soft hover:bg-ink/5">
-                    不是異動
-                  </button>
                 </li>
               ))}
             </ul>
@@ -141,6 +152,12 @@ function VitalItem({ visit, r, onEdit }: { visit: Visit; r: VitalReading; onEdit
   const [playing, setPlaying] = useState(false);
   const unit = VITAL_UNIT[r.key];
   const playable = canPlaySource(visit) && r.sourceMs !== null;
+  const primary = r.suggestion
+    ? { label: `改成 ${r.suggestion}`, run: () => setVital(visit.id, r.key, r.suggestion, visit.vitals[r.key]?.qualifier ?? r.qualifier) }
+    : r.status !== "implausible"
+      ? { label: `${r.value} 沒錯`, run: () => confirmVital(visit.id, r.key) }
+      : null;
+  const wide = !primary || primary.label.length > 7;
   return (
     <Item>
       <p className="flex flex-wrap items-baseline gap-x-2 text-[1.1rem] font-extrabold">
@@ -172,19 +189,17 @@ function VitalItem({ visit, r, onEdit }: { visit: Visit; r: VitalReading; onEdit
           )}
         </p>
       )}
-      <div className="mt-3 flex flex-wrap gap-2">
-        {r.suggestion && (
-          <Button variant="primary" onClick={() => setVital(visit.id, r.key, r.suggestion, visit.vitals[r.key]?.qualifier ?? r.qualifier)}>
-            改成 {r.suggestion}
+      {/* 三顆一排；字比較長（血壓）或大字模式時，主要按鈕自己一排，不要被切字。 */}
+      <div className={cx("mt-3 grid gap-2", wide ? "grid-cols-2" : "grid-cols-3 [:root[data-size=large]_&]:grid-cols-2")}>
+        {primary && (
+          <Button variant="primary" className={cx("px-2!", wide ? "col-span-2" : "[:root[data-size=large]_&]:col-span-2")} onClick={primary.run}>
+            {primary.label}
           </Button>
         )}
-        {!r.suggestion && r.status !== "implausible" && (
-          <Button variant="primary" onClick={() => confirmVital(visit.id, r.key)}>
-            {r.value} 沒錯
-          </Button>
-        )}
-        <Button onClick={onEdit}>自己輸入</Button>
-        <Button variant="soft" onClick={() => setVital(visit.id, r.key, null, null)}>
+        <Button className="px-2!" onClick={onEdit}>
+          自己輸入
+        </Button>
+        <Button variant="soft" className="px-2!" onClick={() => setVital(visit.id, r.key, null, null)}>
           本次未測
         </Button>
       </div>

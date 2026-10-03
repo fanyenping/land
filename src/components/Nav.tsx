@@ -60,7 +60,7 @@ function NavItem({ item, badge, vertical }: { item: Item; badge?: number; vertic
 export function BottomNav({ onPlus }: { onPlus: () => void }) {
   const count = useQueueCount();
   return (
-    <nav aria-label="主要導覽" className="safe-bottom pointer-events-none fixed inset-x-0 bottom-0 z-40 px-4 pb-2.5 lg:hidden">
+    <nav aria-label="主要導覽" className="pointer-events-none fixed inset-x-0 bottom-0 z-40 px-4 pb-[var(--nav-gap)] lg:hidden">
       <div className="pointer-events-auto mx-auto flex max-w-[340px] items-center justify-between rounded-full bg-card px-2 py-0.5 shadow-soft outline-ink">
         <NavItem item={ITEMS[0]} />
         <NavItem item={ITEMS[1]} />

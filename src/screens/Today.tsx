@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { ChevronRight, ClipboardList, FileUp, Info, Mic, MoreHorizontal, Plus, Search, Trash2 } from "lucide-react";
+import { CalendarPlus, ChevronRight, ClipboardList, FileUp, Info, Mic, MoreHorizontal, Trash2 } from "lucide-react";
 import { useFlows } from "../app/Flows";
 import { ActionSheet } from "../components/ActionSheet";
 import { Critter } from "../components/Critter";
@@ -12,7 +12,7 @@ import { ageOf, daysUntil, greeting, longDate, shortDate, todayStr } from "../li
 import { useAllVisits, useEngine, useNow, useOnline, usePatients, useSettings } from "../lib/hooks";
 import type { Patient, Visit } from "../lib/model";
 import { nextDue } from "../lib/pipeline";
-import { pendingCount, visitStatus } from "../lib/status";
+import { visitStatus } from "../lib/status";
 import { engineLabel } from "../lib/api";
 import { completedCount } from "../assessment/forms";
 import { TRIAL } from "../lib/env";
@@ -41,7 +41,10 @@ export function Today() {
   const done = todays.filter((v) => v.status === "done");
   const waitingReview = todays.filter((v) => v.status === "review" || v.status === "failed" || v.status === "interrupted");
   const active = todays.filter((v) => v.status !== "done");
-  const firstNames = todays.slice(0, 3).map((v) => byId.get(v.patientId)).filter(Boolean) as Patient[];
+  // 主卡先列還沒訪視的人，和下方清單順序一致。
+  const firstNames = [...active, ...done].slice(0, 3).map((v) => byId.get(v.patientId)).filter(Boolean) as Patient[];
+  const offline = !TRIAL && !online;
+  const aiNote = aiStatus.tone === "demo" || aiStatus.tone === "off";
 
   if (!patients || !visits) return null;
 
@@ -91,35 +94,26 @@ export function Today() {
                 </span>
               ))}
               <span className="whitespace-nowrap">{todays.length > 3 ? ` 等 ${todays.length} 位` : ` 共 ${todays.length} 位`}</span>
-              {waitingReview.length > 0 ? (
-                <>
-                  ，還有
-                  <span className="mx-1 inline-flex translate-y-1 items-center">
-                    <Critter kind="pending" size={34} />
-                  </span>
-                  {waitingReview.length} 份等你記錄。
-                </>
-              ) : done.length === todays.length ? (
-                <>，全部完成了。</>
-              ) : (
-                <>。</>
-              )}
+              {done.length === todays.length ? <>，全部完成了。</> : <>。</>}
             </>
           )}
         </p>
-        <div className="mt-5 flex flex-wrap items-center gap-2 text-[0.92rem] font-bold">
-          {!TRIAL && (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5">
-              <span className={cx("h-2.5 w-2.5 rounded-full", online ? "bg-[#00b36b]" : "bg-[#8a8790]")} />
-              {online ? "已連線" : "離線中・錄音、查看、複製都照常"}
-            </span>
-          )}
-          {(aiStatus.tone === "demo" || aiStatus.tone === "off") && (
-            <span className={cx("inline-flex items-center rounded-full px-3 py-1.5", aiStatus.tone === "demo" ? "bg-pending text-[#141414]" : "bg-white/10")}>
-              {TRIAL ? "試用版・示範資料" : aiStatus.text}
-            </span>
-          )}
-        </div>
+        {/* 只在例外狀況時提示（離線、示範模式、AI 未連線）；電腦版側欄底部已有 AI 狀態。 */}
+        {(offline || aiNote) && (
+          <div className={cx("mt-5 flex flex-wrap items-center gap-2 text-[0.92rem] font-bold", !offline && "lg:hidden")}>
+            {offline && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-[#8a8790]" />
+                離線・仍可錄音與複製
+              </span>
+            )}
+            {aiNote && (
+              <span className={cx("inline-flex items-center rounded-full px-3 py-1.5 lg:hidden", aiStatus.tone === "demo" ? "bg-pending text-[#141414]" : "bg-white/10")}>
+                {TRIAL ? "試用版・示範資料" : aiStatus.text}
+              </span>
+            )}
+          </div>
+        )}
         <Critter kind="brand" size={120} className="pointer-events-none absolute -bottom-8 -right-6 opacity-90 md:-right-2" style={{ transform: "rotate(-12deg)" }} />
       </section>
 
@@ -132,16 +126,14 @@ export function Today() {
 
       <div className="mb-3 flex items-center gap-2">
         <h2 className="font-round text-[1.5rem] font-extrabold">今日個案</h2>
-        <Pill tone="ink">{todays.length} 位</Pill>
         <RoundButton label="加入今日" className="ml-auto" onClick={addToToday}>
-          <Plus size={22} strokeWidth={2.8} />
+          <CalendarPlus size={22} />
         </RoundButton>
       </div>
 
       {todays.length === 0 ? (
         <div className="flex flex-col items-center gap-4 rounded-[30px] bg-card px-6 py-10 text-center outline-ink">
           <Critter kind="empty" size={84} />
-          <p className="text-[1.15rem] font-bold">今天還沒有排訪視</p>
           <div className="flex w-full max-w-sm flex-col gap-2.5">
             <Button variant="primary" size="lg" block onClick={addToToday}>
               找個案加入今日
@@ -172,18 +164,6 @@ export function Today() {
         </div>
       )}
 
-      <div className="mt-5 grid grid-cols-2 gap-3">
-        <button type="button" onClick={flows.recordForSomeone} className="flex min-h-[60px] items-center gap-2 rounded-[22px] bg-card px-4 font-bold outline-ink">
-          <Mic size={20} strokeWidth={2.5} />
-          <span className="flex-1 text-left">錄音給其他個案</span>
-          <ChevronRight size={18} className="text-ink-faint" />
-        </button>
-        <Link to="/patients" className="flex min-h-[60px] items-center gap-2 rounded-[22px] bg-card px-4 font-bold outline-ink">
-          <Search size={20} strokeWidth={2.5} />
-          <span className="flex-1">找個案</span>
-          <ChevronRight size={18} className="text-ink-faint" />
-        </Link>
-      </div>
     </div>
   );
 }
@@ -235,7 +215,7 @@ function VisitCard({ visit, patient, index }: { visit: Visit; patient: Patient; 
       primary = { label: "繼續錄音", icon: <Mic size={22} strokeWidth={2.6} />, run: () => navigate(`/v/${visit.id}/rec`) };
       break;
     case "review":
-      primary = { label: "查看並複製", run: open };
+      primary = { label: "查看記錄", run: open };
       break;
     case "failed":
       primary = { label: "看原因", run: open };
@@ -278,20 +258,19 @@ function VisitCard({ visit, patient, index }: { visit: Visit; patient: Patient; 
           {patient.last.summary}
         </p>
       )}
-      {visit.status === "waiting" && <p className="mt-3 text-[1rem] text-ink-soft">錄音已安全存在這台裝置，連上網路後自動處理。</p>}
-      {visit.status === "processing" && <p className="mt-3 text-[1rem] text-ink-soft">整理中，可以先忙別的，好了會出現在這裡。</p>}
+      {visit.status === "waiting" && <p className="mt-3 text-[1rem] text-ink-soft">錄音已存本機，連網後自動處理</p>}
+      {visit.status === "processing" && <p className="mt-3 text-[1rem] text-ink-soft">整理中，可先忙別的</p>}
       {visit.status === "failed" && visit.error && <p className="mt-3 text-[1rem] font-bold text-danger">{visit.error.message}</p>}
-      {visit.status === "review" && pendingCount(visit) === 0 && <p className="mt-3 text-[1rem] text-ink-soft">三份都寫好了，確認後就能複製。</p>}
 
-      {visit.status === "scheduled" && (
+      {/* 訪視前只提醒例外：管路快到期、沒有錄音同意。 */}
+      {visit.status === "scheduled" && (due || !consentValid(patient)) && (
         <div className="mt-3 flex flex-wrap gap-2">
           {due && (
             <Pill tone="audio">
               {due.t.name} {shortDate(due.due!)} 到期
             </Pill>
           )}
-          {patient.plan && <Pill tone="plan">計畫第 {patient.plan.version} 版</Pill>}
-          {consentValid(patient) ? <Pill tone="ok">已同意錄音</Pill> : refused ? <Pill tone="danger">不同意錄音</Pill> : <Pill tone="muted">尚未取得錄音同意</Pill>}
+          {!consentValid(patient) && (refused ? <Pill tone="danger">不同意錄音</Pill> : <Pill tone="muted">未取得錄音同意</Pill>)}
         </div>
       )}
 

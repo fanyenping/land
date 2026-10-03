@@ -10,16 +10,14 @@ import { clock } from "../lib/format";
 import type { OutputVersion, Visit } from "../lib/model";
 import { regenerate } from "../lib/pipeline";
 
-/** H7 修改：段落標題鎖定，內文可改；每段可「複製此段」（中衛分欄位貼上）。 */
+/** H7 修改：段落標題鎖定，內文可改；每段可「複製」（中衛分欄位貼上）。 */
 export function EditSheet({ open, onClose, visit, kind, title }: { open: boolean; onClose: () => void; visit: Visit; kind: DocKind; title: string }) {
-  return (
-    <Sheet open={open} onClose={onClose} title={`修改${title}`} full>
-      {open && <EditBody visit={visit} kind={kind} onDone={onClose} />}
-    </Sheet>
-  );
+  // 關閉時卸載，下次打開重新帶入目前版本。
+  if (!open) return null;
+  return <EditBody visit={visit} kind={kind} title={title} onDone={onClose} />;
 }
 
-function EditBody({ visit, kind, onDone }: { visit: Visit; kind: DocKind; onDone: () => void }) {
+function EditBody({ visit, kind, title, onDone }: { visit: Visit; kind: DocKind; title: string; onDone: () => void }) {
   const toast = useToast();
   const out = visit.outputs[kind];
   const [sections, setSections] = useState<DocSection[]>(() => out.versions[out.current]?.sections.map((s) => ({ ...s })) ?? []);
@@ -27,51 +25,61 @@ function EditBody({ visit, kind, onDone }: { visit: Visit; kind: DocKind; onDone
   const dirty = JSON.stringify(sections) !== original;
 
   return (
-    <div className="flex flex-col gap-4 pb-4">
-      {kind === "record" && <p className="rounded-2xl bg-pending-tint p-3 text-[0.95rem] font-bold">生命徵象由「數值」區塊帶入，請在那裡修改，三份會一起更新。</p>}
-      {sections.map((s, i) => (
-        <div key={i} className="rounded-[22px] bg-card p-3.5 outline-ink">
-          <div className="mb-2 flex items-center gap-2">
-            <span className="min-w-0 flex-1 truncate text-[1.05rem] font-extrabold">{s.heading || (i === 0 ? "開場" : "結語")}</span>
-            <button
-              type="button"
-              onClick={async () => {
-                if (await writeClipboard(s.body)) toast("已複製此段");
-                else toast("無法寫入剪貼簿，請長按文字自行複製", { error: true });
-              }}
-              className="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full px-3 text-[0.92rem] font-bold hover:bg-ink/5"
-            >
-              <Copy size={16} />
-              複製此段
-            </button>
-          </div>
-          <textarea
-            value={s.body}
-            onChange={(e) => setSections((list) => list.map((x, j) => (j === i ? { ...x, body: e.target.value } : x)))}
-            rows={Math.min(14, Math.max(3, Math.ceil(s.body.length / 26) + s.body.split("\n").length))}
-            className="w-full resize-y rounded-2xl bg-sunken p-3 text-[1.15rem] leading-[1.7] outline-none focus:shadow-[inset_0_0_0_3px_var(--ink)]"
-          />
+    <Sheet
+      open
+      onClose={onDone}
+      title={`修改${title}`}
+      full
+      footer={
+        <div className="flex gap-2">
+          <Button size="lg" className="flex-1" onClick={onDone}>
+            取消
+          </Button>
+          <Button
+            variant="primary"
+            size="lg"
+            className="flex-[2]"
+            disabled={!dirty}
+            onClick={async () => {
+              await saveEdit(visit.id, kind, sections);
+              toast("已存成新版本");
+              onDone();
+            }}
+          >
+            完成
+          </Button>
         </div>
-      ))}
-      <div className="sticky bottom-0 -mx-1 flex gap-2 bg-paper/95 px-1 pb-1 pt-2 backdrop-blur">
-        <Button size="lg" className="flex-1" onClick={onDone}>
-          取消
-        </Button>
-        <Button
-          variant="primary"
-          size="lg"
-          className="flex-[2]"
-          disabled={!dirty}
-          onClick={async () => {
-            await saveEdit(visit.id, kind, sections);
-            toast("已存成新版本");
-            onDone();
-          }}
-        >
-          完成
-        </Button>
+      }
+    >
+      <div className="flex flex-col gap-4 pb-4">
+        {kind === "record" && <p className="rounded-2xl bg-pending-tint p-3 text-[0.95rem] font-bold">生命徵象請在「生命徵象」區修改，三份同步更新</p>}
+        {sections.map((s, i) => (
+          <div key={i} className="rounded-[22px] bg-card p-3.5 outline-ink">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-[1.05rem] font-extrabold">{s.heading || (i === 0 ? "開場" : "結語")}</span>
+              <button
+                type="button"
+                aria-label={`複製${s.heading || (i === 0 ? "開場" : "結語")}`}
+                onClick={async () => {
+                  if (await writeClipboard(s.body)) toast("已複製此段");
+                  else toast("無法寫入剪貼簿，請長按文字自行複製", { error: true });
+                }}
+                className="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full px-3 text-[0.92rem] font-bold hover:bg-ink/5"
+              >
+                <Copy size={16} />
+                複製
+              </button>
+            </div>
+            <textarea
+              value={s.body}
+              onChange={(e) => setSections((list) => list.map((x, j) => (j === i ? { ...x, body: e.target.value } : x)))}
+              rows={Math.min(14, Math.max(3, Math.ceil(s.body.length / 26) + s.body.split("\n").length))}
+              className="w-full resize-y rounded-2xl bg-sunken p-3 text-[1.15rem] leading-[1.7] outline-none focus:shadow-[inset_0_0_0_3px_var(--ink)]"
+            />
+          </div>
+        ))}
       </div>
-    </div>
+    </Sheet>
   );
 }
 
@@ -95,7 +103,7 @@ export function RegenerateSheet({ open, onClose, visit, kind, title }: { open: b
           ))}
         </div>
         <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="其他要求（選填）" maxLength={500} className={inputClass} />
-        {keeps && <p className="rounded-2xl bg-pending-tint p-3 font-bold">你目前的版本會保留，新版本會放在旁邊讓你比較。</p>}
+        {keeps && <p className="rounded-2xl bg-pending-tint p-3 font-bold">目前版本會保留，可比較後再選</p>}
         <Button
           variant="primary"
           size="lg"

@@ -222,7 +222,7 @@ function FormBody({ patient, form }: { patient: Patient; form: FormDef }) {
         ))}
       </div>
 
-      <div className="sticky bottom-[calc(env(safe-area-inset-bottom)+78px)] z-20 -mx-4 flex gap-2.5 bg-paper/90 px-4 pb-2 pt-2 backdrop-blur-md md:-mx-8 md:px-8 lg:bottom-0">
+      <div className="sticky bottom-[var(--nav-h)] z-20 -mx-4 flex gap-2.5 bg-paper/90 px-4 pb-3 pt-2 backdrop-blur-md md:-mx-8 md:px-8">
         <Button size="lg" className="flex-1" disabled={busy || (!dirty && !!saved)} onClick={() => save(false)}>
           {dirty || !saved ? "儲存" : "已儲存"}
         </Button>

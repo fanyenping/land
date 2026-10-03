@@ -7,10 +7,11 @@ import { Name } from "../components/Name";
 import { useToast } from "../components/Toast";
 import { VitalsSheet } from "../components/VitalsSheet";
 import { BottomNav, SideNav } from "../components/Nav";
+import { NotFound } from "./NotFound";
 import { Button, RoundButton, cx } from "../components/ui";
 import { useFlows } from "../app/Flows";
 import { consentValid, deleteVisit, finishVisit, startRecording, storageErrorMessage, storeFiles, storeSummary } from "../lib/actions";
-import { duration, shortDate } from "../lib/format";
+import { duration } from "../lib/format";
 import { usePatient, useRecorder, useVisit } from "../lib/hooks";
 import { TRIAL } from "../lib/env";
 import { TRIAL_NO_MIC, recorder } from "../lib/recorder";
@@ -55,16 +56,17 @@ export function Recording() {
     };
   }, [live, rec.state]);
 
+  // 錄音中按導覽的「＋」不開新紀錄：開始另一筆錄音會停掉這一筆。
+  const onPlus = () => (live ? toast("先完成這次訪視") : flows.openNew());
+
   if (visit === null || patient === null) {
     return (
-      <div className="grid min-h-[100dvh] place-items-center p-6 text-center">
-        <div className="flex flex-col items-center gap-4">
-          <Critter kind="empty" size={80} />
-          <p className="text-[1.2rem] font-bold">找不到這筆訪視</p>
-          <Button variant="primary" onClick={() => navigate("/")}>
-            回到今天
-          </Button>
-        </div>
+      <div className="flex min-h-[100dvh]">
+        <SideNav onPlus={onPlus} />
+        <main className="min-w-0 flex-1 pb-[calc(var(--nav-h)+1.25rem)] lg:pb-10">
+          <NotFound title="找不到這筆訪視" />
+        </main>
+        <BottomNav onPlus={onPlus} />
       </div>
     );
   }
@@ -96,11 +98,12 @@ export function Recording() {
 
   const ended = visit.status === "interrupted";
   const showStart = !live && rec.state !== "starting";
-  const consentText = dictate ? "口述" : patient.consent && consentValid(patient) ? `已同意（${shortDate(patient.consent.at.slice(0, 10))}）` : "未記錄同意";
+  // 同意前一步才確認過：只在缺同意時提醒。
+  const consentText = !dictate && !TRIAL && !(patient.consent && consentValid(patient)) ? "未同意錄音" : null;
 
   return (
     <div className="flex min-h-[100dvh]">
-      <SideNav onPlus={() => flows.openNew()} />
+      <SideNav onPlus={onPlus} />
       <div className="relative flex min-w-0 flex-1 flex-col bg-audio text-[#141414]">
         <div
           className="pointer-events-none absolute inset-0 opacity-60"
@@ -116,7 +119,8 @@ export function Recording() {
           <div className="flex min-w-0 flex-1 items-center justify-center gap-2 rounded-full bg-[#141414] px-4 py-2.5 text-white">
             <span className={cx("h-3 w-3 shrink-0 rounded-full", rec.state === "recording" && mine ? "animate-pulse bg-[#ff4a1c]" : "bg-white/50")} />
             <span className="truncate text-[1rem] font-bold">
-              {live ? (rec.state === "paused" ? "已暫停" : dictate ? "口述中" : "錄音中") : "準備錄音"}・<Name name={patient.name} />・{consentText}
+              {live ? (rec.state === "paused" ? "已暫停" : dictate ? "口述中" : "錄音中") : dictate ? "準備口述" : "準備錄音"}・<Name name={patient.name} />
+              {consentText && <>・{consentText}</>}
             </span>
           </div>
           <RoundButton label="更多" onClick={() => setMenu(true)} tone="card">
@@ -124,10 +128,10 @@ export function Recording() {
           </RoundButton>
         </header>
 
-        <main className="relative z-10 mx-auto flex w-full max-w-[560px] flex-1 flex-col items-center justify-center gap-4 px-5 pb-[calc(env(safe-area-inset-bottom)+100px)] lg:pb-6">
+        <main className="relative z-10 mx-auto flex w-full max-w-[560px] flex-1 flex-col items-center justify-center gap-4 px-5 pb-[calc(var(--nav-h)+1rem)] lg:pb-6">
           {ended && !live && (
             <div className="w-full rounded-[24px] bg-pending p-4 font-bold outline-ink">
-              錄音中斷了，前面 {duration(previousMs)} 已安全保存。可以繼續錄第 {visit.parts.length + 1} 段，或直接完成訪視。
+              錄音中斷了，已錄的都保存了
             </div>
           )}
           {TRIAL ? (
@@ -147,32 +151,37 @@ export function Recording() {
             </div>
           ) : null}
 
-          <div className="relative my-2 grid place-items-center">
+          {/* 圓盤在矮螢幕或大字模式時縮小，主要按鈕才不會被擠到導覽下面；音量圈最大到圓盤的 1.2 倍。 */}
+          <div className="relative my-5 grid place-items-center [--disc:clamp(130px,22dvh,190px)]">
             {live && rec.state === "recording" && (
               <>
-                <span className="absolute h-[230px] w-[230px] animate-pulse-ring rounded-full bg-white/40" />
-                <span className="absolute rounded-full bg-white/35 transition-[width,height] duration-100" style={{ width: 170 + rec.level * 120, height: 170 + rec.level * 120 }} />
+                <span className="absolute size-[calc(var(--disc)*1.2)] animate-pulse-ring rounded-full bg-white/40" />
+                <span
+                  className="absolute rounded-full bg-white/35 transition-[width,height] duration-100"
+                  style={{ width: `calc(var(--disc) * ${(0.9 + Math.min(rec.level, 0.5) * 0.6).toFixed(3)})`, height: `calc(var(--disc) * ${(0.9 + Math.min(rec.level, 0.5) * 0.6).toFixed(3)})` }}
+                />
               </>
             )}
-            <span className="relative grid h-[190px] w-[190px] place-items-center rounded-full bg-[#141414]">
-              <Critter kind="audio" size={118} animate={live && rec.state === "recording"} />
+            <span className="relative grid size-[var(--disc)] place-items-center rounded-full bg-[#141414]">
+              <Critter kind="audio" size={118} style={{ width: "62%", height: "62%" }} animate={live && rec.state === "recording"} />
             </span>
           </div>
 
           <div className="num text-[4.2rem] font-extrabold leading-none tracking-tight" aria-live="off">
             {duration(previousMs + (mine ? rec.elapsedMs : 0))}
           </div>
-          <p className="text-[1.02rem] font-bold">
-            {live
-              ? `第 ${segment} 段・即時存在這台裝置`
-              : visit.parts.length
-                ? `已加入 ${visit.parts.length} 段錄音`
-                : TRIAL
-                  ? "選一個錄音檔，或拍文件、記數值"
+          {/* 試用版下面就是「選錄音檔」按鈕，不再重複說明。 */}
+          {(live || visit.parts.length > 0 || !TRIAL) && (
+            <p className="text-[1.02rem] font-bold">
+              {live
+                ? `第 ${segment} 段・即時存在這台裝置`
+                : visit.parts.length
+                  ? `已加入 ${visit.parts.length} 段錄音`
                   : dictate
                     ? "對著手機說今天的訪視重點"
                     : "手機放在床邊就好，照護時不用碰"}
-          </p>
+            </p>
+          )}
           {live && rec.state === "recording" && rec.elapsedMs > 3000 && rec.level < 0.04 && <p className="rounded-full bg-white/60 px-3 py-1 text-[0.92rem] font-bold">聲音偏小，手機放近一點</p>}
 
           <div className="mt-2 grid w-full grid-cols-2 gap-3">
@@ -219,7 +228,7 @@ export function Recording() {
                 type="button"
                 aria-label={rec.state === "paused" ? "繼續錄音" : "暫停"}
                 onClick={() => (rec.state === "paused" ? recorder.resume() : recorder.pause())}
-                className="sticker grid h-[76px] w-[76px] shrink-0 place-items-center rounded-full bg-card"
+                className="sticker grid h-[76px] w-[76px] shrink-0 place-items-center rounded-full bg-card text-ink"
                 disabled={rec.state === "starting"}
               >
                 {rec.state === "paused" ? <Play size={30} fill="currentColor" /> : <Pause size={30} fill="currentColor" />}
@@ -276,9 +285,9 @@ export function Recording() {
           onClose={() => setMenu(false)}
           title="錄音選項"
           items={[
-            { label: "選錄音檔加入", icon: <Upload size={22} />, onSelect: () => audioPick.current?.click() },
+            { label: "加入錄音檔", icon: <Upload size={22} />, onSelect: () => audioPick.current?.click() },
             {
-              label: "錄錯人了：改到其他個案",
+              label: "改到其他個案",
               icon: <Shuffle size={22} />,
               onSelect: () => flows.moveTo(visit.id, patient.id),
             },
@@ -309,7 +318,7 @@ export function Recording() {
           </button>
         )}
       </div>
-      <BottomNav onPlus={() => flows.openNew()} />
+      <BottomNav onPlus={onPlus} />
     </div>
   );
 }

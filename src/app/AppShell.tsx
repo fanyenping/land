@@ -20,7 +20,7 @@ function Frame() {
   return (
     <div className="flex min-h-[100dvh]">
       <SideNav onPlus={() => flows.openNew()} />
-      <main className="min-w-0 flex-1 pb-[calc(env(safe-area-inset-bottom)+96px)] lg:pb-10">
+      <main className="min-w-0 flex-1 pb-[calc(var(--nav-h)+1.25rem)] lg:pb-10">
         <Outlet />
       </main>
       <BottomNav onPlus={() => flows.openNew()} />

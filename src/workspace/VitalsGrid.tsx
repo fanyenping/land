@@ -13,7 +13,7 @@ export function VitalsGrid({ visit, onEdit }: { visit: Visit; onEdit: (key: Vita
   const missing = visit.analysis?.missingDomains ?? [];
 
   return (
-    <section id="sec-vitals" aria-label="生命徵象" className="scroll-mt-32">
+    <section id="sec-vitals" aria-label="生命徵象" className="@container scroll-mt-32">
       <div className="mb-2 flex items-center justify-between">
         <h2 className="font-round text-[1.25rem] font-extrabold">生命徵象</h2>
         <button type="button" onClick={() => onEdit(null)} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full px-3 font-bold hover:bg-ink/5">
@@ -26,7 +26,8 @@ export function VitalsGrid({ visit, onEdit }: { visit: Visit; onEdit: (key: Vita
           {visit.intakeOnly ? "這筆只有文件，沒有今日量測值" : "這次沒有提到生命徵象・點這裡補上"}
         </button>
       ) : (
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+        // 依所在欄寬決定欄數：電腦版左欄（約 340–420px）也維持兩欄，數字與單位才不會被擠斷。
+        <div className="grid grid-cols-2 gap-2.5 @[30rem]:grid-cols-3">
           {keys.map((k) => {
             const v = visit.vitals[k];
             const r = readingOf(visit, k);
@@ -42,14 +43,15 @@ export function VitalsGrid({ visit, onEdit }: { visit: Visit; onEdit: (key: Vita
                 className={cx(
                   "relative flex min-h-[104px] flex-col items-start justify-between rounded-[22px] p-3.5 text-left outline-ink transition-transform active:scale-[0.98]",
                   pending ? "bg-pending-tint" : "bg-card",
-                  k === "consciousness" && "col-span-2 sm:col-span-3 min-h-[84px]",
+                  k === "consciousness" && "col-span-2 @[30rem]:col-span-3 min-h-[84px]",
                 )}
               >
                 <span className="flex w-full min-w-0 items-center gap-1.5 text-[0.95rem] font-bold">
                   <span className="shrink-0">{VITAL_LABEL[k]}</span>
                   {(v?.qualifier ?? r?.qualifier) && <span className="min-w-0 truncate font-medium text-ink-soft">{v?.qualifier ?? r?.qualifier}</span>}
-                  {flag && value !== null && <span className="rounded-full bg-danger-tint px-2 py-0.5 text-[0.78rem] font-extrabold text-danger">{flag === "high" ? "偏高" : "偏低"}</span>}
-                  <span className="ml-auto shrink-0 text-[0.8rem] font-bold text-ink-soft">{pending ? "待確認" : v?.by === "nurse" ? "手動" : "有原句"}</span>
+                  {flag && value !== null && <span className="shrink-0 whitespace-nowrap rounded-full bg-danger-tint px-2 py-0.5 text-[0.78rem] font-extrabold text-danger">{flag === "high" ? "偏高" : "偏低"}</span>}
+                  {/* 預設（有原句）不標，只標要注意的狀態。 */}
+                  {(pending || v?.by === "nurse") && <span className="ml-auto shrink-0 text-[0.8rem] font-bold text-ink-soft">{pending ? "待確認" : "手動"}</span>}
                 </span>
                 {value === null ? (
                   <span className="text-[1.1rem] font-bold text-ink-soft">本次未測</span>

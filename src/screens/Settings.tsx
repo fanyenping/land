@@ -6,7 +6,7 @@ import { Critter } from "../components/Critter";
 import { Sheet } from "../components/Sheet";
 import { useToast } from "../components/Toast";
 import { Button, Segmented, Spinner, cx, inputClass } from "../components/ui";
-import { isDemoEngine, probeEngine, setAccessCode, verifyAccessCode } from "../lib/api";
+import { engineLabel, isDemoEngine, probeEngine, setAccessCode, verifyAccessCode } from "../lib/api";
 import { applyRetention, exportAll, saveSettings, wipeAll } from "../lib/db";
 import { clock, shortDate } from "../lib/format";
 import { useEngine, useSettings } from "../lib/hooks";
@@ -25,6 +25,14 @@ export function SettingsScreen() {
   const [wipe, setWipe] = useState(false);
 
   const set = (patch: Partial<Settings>) => void saveSettings(patch);
+  // 用詞與側欄、今天頁一致。只有接上真的模型時才列出轉文字與模型。
+  const status = engineLabel(engine, s.demoMode);
+  const engineDetail =
+    engine?.kind === "server" && !isDemoEngine(engine)
+      ? `轉文字：${STT_LABEL[engine.health.stt] ?? engine.health.stt}・模型：${engine.health.llm.model ?? "—"}`
+      : engine?.kind === "local"
+        ? `${engine.reason}・紀錄會先存在這台裝置，連上後自動接續`
+        : "";
 
   return (
     <div className="mx-auto w-full max-w-[760px] px-4 pt-[max(env(safe-area-inset-top),16px)] md:px-8 lg:pt-8">
@@ -34,9 +42,9 @@ export function SettingsScreen() {
       </header>
 
       <Group title="我的資料" tone="bg-record">
-        <TextSetting label="姓名（確認紀錄時記下）" value={s.nurseName} onSave={(v) => set({ nurseName: v })} placeholder="例如 林護理師" />
-        <TextSetting label="機構名稱（衛教署名）" value={s.clinicName} onSave={(v) => set({ clinicName: v })} placeholder="例如 安心居家護理所" />
-        <TextSetting label="機構電話（衛教署名）" value={s.clinicPhone} onSave={(v) => set({ clinicPhone: v })} placeholder="例如 03-000-0000" inputMode="tel" />
+        <TextSetting label="姓名" value={s.nurseName} onSave={(v) => set({ nurseName: v })} placeholder="例如 林護理師" />
+        <TextSetting label="機構名稱" value={s.clinicName} onSave={(v) => set({ clinicName: v })} placeholder="例如 安心居家護理所" />
+        <TextSetting label="機構電話" value={s.clinicPhone} onSave={(v) => set({ clinicPhone: v })} placeholder="例如 03-000-0000" inputMode="tel" />
       </Group>
 
       <Group title="顯示" tone="bg-edu">
@@ -61,7 +69,7 @@ export function SettingsScreen() {
         <Row label="紀錄名稱">
           <Segmented label="紀錄名稱" value={s.recordTitle} onChange={(v) => set({ recordTitle: v })} options={[{ value: "護理紀錄", label: "護理紀錄" }, { value: "訪視紀錄", label: "訪視紀錄" }]} />
         </Row>
-        <Row label="紀錄寫法" hint="之後產生的紀錄套用">
+        <Row label="紀錄寫法" hint="只影響新紀錄">
           <Segmented label="紀錄寫法" value={s.recordStyle} onChange={(v) => set({ recordStyle: v })} options={[{ value: "four", label: "四段式" }, { value: "narrative", label: "敘事式" }]} />
         </Row>
         <Row label="生命徵象順序" hint={s.vitalsOrder === "standard" ? "體溫、脈搏、呼吸、血壓、血氧、血糖、意識" : "體溫、血壓、脈搏、血氧、呼吸、意識、血糖"}>
@@ -94,7 +102,7 @@ export function SettingsScreen() {
             <Critter kind="pending" size={44} />
             <div className="min-w-0 flex-1">
               <p className="font-extrabold">試用版</p>
-              <p className="text-[0.9rem] text-ink-soft">不連 AI 伺服器，錄音與文件都用內建示範內容產生三份，輸出標示「示範資料」。資料只存在這台裝置。</p>
+              <p className="text-[0.9rem] text-ink-soft">不連 AI，三份內容用示範資料產生，只存在這台裝置。</p>
             </div>
           </div>
         ) : (
@@ -102,17 +110,8 @@ export function SettingsScreen() {
             <div className="flex items-center gap-3 rounded-2xl bg-card p-3.5 outline-ink">
               <Critter kind={engine ? (isDemoEngine(engine) ? "pending" : "done") : "processing"} size={44} animate={!engine} />
               <div className="min-w-0 flex-1">
-                <p className="font-extrabold">
-                  {!engine ? "檢查中" : engine.kind === "local" ? "連不上 AI 伺服器" : engine.health.llm.mode === "demo" ? "伺服器示範模式" : `Claude 已連線`}
-                  {s.demoMode && <span className="ml-2 inline-flex rounded-full bg-pending px-2.5 py-0.5 text-[0.85rem] text-[#141414]">示範模式開啟中</span>}
-                </p>
-                <p className="text-[0.9rem] text-ink-soft">
-                  {engine?.kind === "server"
-                    ? `轉文字：${STT_LABEL[engine.health.stt] ?? engine.health.stt}・模型：${engine.health.llm.model ?? "示範"}`
-                    : engine?.kind === "local"
-                      ? `${engine.reason}・紀錄會先存在這台裝置，連上後自動接續`
-                      : ""}
-                </p>
+                <p className="font-extrabold">{status.text}</p>
+                {engineDetail && <p className="text-[0.9rem] text-ink-soft">{engineDetail}</p>}
               </div>
               <Button
                 size="sm"
@@ -142,7 +141,7 @@ export function SettingsScreen() {
                 }}
               />
             )}
-            <Row label="示範模式" hint="開啟後新紀錄一律用內建示範內容，不呼叫 AI，輸出會標示「示範資料」。給教學或試用。">
+            <Row label="示範模式" hint="新紀錄改用示範內容，不呼叫 AI（教學、試用）">
               <Segmented
                 label="示範模式"
                 value={s.demoMode ? "on" : "off"}
@@ -161,7 +160,7 @@ export function SettingsScreen() {
       </Group>
 
       <Group title="資料與隱私" tone="bg-pdf">
-        <Row label="錄音與文件保存" hint="已完成的訪視超過天數後，刪除這台裝置上的錄音與文件（紀錄文字保留）">
+        <Row label="錄音與文件保存" hint="完成後超過天數即刪除錄音與文件（紀錄保留）">
           <Segmented
             label="保存天數"
             value={String(s.retentionDays)}
@@ -175,7 +174,7 @@ export function SettingsScreen() {
         </Row>
         <Row label="AI 資料處理同意">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-bold">{s.consentAt ? `第 ${s.consentVersion} 版・${shortDate(s.consentAt.slice(0, 10))} ${clock(s.consentAt)} 同意` : "尚未同意"}</span>
+            <span className="font-bold">{s.consentAt ? `${shortDate(s.consentAt.slice(0, 10))} ${clock(s.consentAt)} 已同意` : "尚未同意"}</span>
             <Button
               size="sm"
               onClick={async () => {
@@ -216,7 +215,7 @@ export function SettingsScreen() {
             載入示範個案
           </Button>
           <Button size="lg" className="text-danger sm:col-span-2" icon={<Trash2 size={19} />} onClick={() => setWipe(true)}>
-            清除這台裝置的所有資料
+            清除所有資料
           </Button>
         </div>
       </Group>

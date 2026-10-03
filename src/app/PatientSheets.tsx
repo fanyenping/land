@@ -159,7 +159,7 @@ function PatientFormBody({ initial, onSaved }: { initial: Patient | null; onSave
         <Field label="年齡">
           <input inputMode="numeric" pattern="[0-9]*" value={age} onChange={(e) => setAge(e.target.value.replace(/\D/g, "").slice(0, 3))} className={inputClass} placeholder="例如 84" />
         </Field>
-        <Field label="家屬怎麼稱呼">
+        <Field label="家屬稱呼">
           <input value={calls} onChange={(e) => setCalls(e.target.value)} className={inputClass} placeholder="例如 阿嬤" />
         </Field>
       </div>
@@ -176,11 +176,11 @@ function PatientFormBody({ initial, onSaved }: { initial: Patient | null; onSave
           ]}
         />
       </div>
-      <Field label="主要診斷" hint="用頓號分開，例如：腦中風後遺症、高血壓">
-        <input value={dx} onChange={(e) => setDx(e.target.value)} className={inputClass} />
+      <Field label="主要診斷">
+        <input value={dx} onChange={(e) => setDx(e.target.value)} className={inputClass} placeholder="例如 腦中風、高血壓" />
       </Field>
       <details className="rounded-[22px] bg-card p-4 outline-ink" open={!!initial && !!(initial.residence || initial.area || initial.resource || initial.heightCm)}>
-        <summary className="cursor-pointer font-bold">照護紀錄資料（選填，導出 PDF 用）</summary>
+        <summary className="cursor-pointer font-bold">照護記錄資料（選填）</summary>
         <div className="mt-3 flex flex-col gap-3">
           <div className="grid grid-cols-2 gap-3">
             <Field label="收案日期">

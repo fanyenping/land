@@ -101,9 +101,6 @@ export function Queue() {
     <div className={cx("mx-auto w-full px-4 pt-[max(env(safe-area-inset-top),16px)] md:px-8 lg:pt-8", desktop ? "max-w-none" : "max-w-[760px]")}>
       <header className="mb-5 flex items-end gap-3">
         <h1 className="font-round text-[2.6rem] font-extrabold leading-none">記錄</h1>
-        <Pill tone="pending" className="mb-1 outline-ink">
-          {ordered.length} 筆未完成
-        </Pill>
       </header>
       {desktop ? (
         <div className="grid grid-cols-[320px_minmax(0,1fr)] items-start gap-5">

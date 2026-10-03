@@ -18,7 +18,7 @@ const Ctx = createContext<(text: string, opts?: ToastOptions) => void>(() => und
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([]);
   const path = useLocation().pathname;
-  // 錄音畫面的主要按鈕在底部：提示改到上方，不要蓋住「完成訪視」。工作台與評估表底部有固定按鈕：提示放更高。
+  // 錄音畫面的主要按鈕在底部：提示改到上方，不要蓋住「完成訪視」。工作台與評估表在導覽上方還有固定按鈕列：提示再往上一列。
   const top = /^\/v\/[^/]+\/rec$/.test(path);
   const aboveBar = /^\/v\/[^/]+$/.test(path) || /^\/patients\/[^/]+\/assessment\/[^/]+$/.test(path);
   const seq = useRef(0);
@@ -39,8 +39,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           (top
             ? "top-[calc(env(safe-area-inset-top)+76px)]"
             : aboveBar
-              ? "bottom-[calc(env(safe-area-inset-bottom)+168px)] lg:bottom-8"
-              : "bottom-[calc(env(safe-area-inset-bottom)+92px)] lg:bottom-8")
+              ? "bottom-[calc(var(--nav-h)+5.75rem)] lg:bottom-8"
+              : "bottom-[calc(var(--nav-h)+0.75rem)] lg:bottom-8")
         }
       >
         {items.map((t) => (

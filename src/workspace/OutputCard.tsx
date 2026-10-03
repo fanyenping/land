@@ -66,8 +66,8 @@ export function OutputCard({
       : confirmed
         ? `已確認・${out.confirmedBy ?? ""} ${clock(out.confirmedAt)}`
         : out.status === "edited"
-          ? "已修改・尚未確認"
-          : "AI 草稿・請確認";
+          ? "已修改"
+          : "AI 草稿";
 
   const flash = () => {
     setJustCopied(true);
@@ -128,12 +128,6 @@ export function OutputCard({
       </header>
 
       <div className="p-4 md:p-5">
-        {demo && has && (
-          <p className="mb-3">
-            <Pill tone="pending">示範資料</Pill>
-          </p>
-        )}
-
         {out.candidate !== null && (
           <div className="mb-3 flex flex-wrap items-center gap-2 rounded-2xl bg-pending-tint p-3 font-bold">
             <span className="flex-1">有新版本可比較</span>
@@ -145,13 +139,13 @@ export function OutputCard({
 
         {changesOpen && has && (
           <div className="mb-3 rounded-2xl bg-pending-tint p-3 font-bold">
-            評估異動尚未確認，確認後才能確認計畫。
+            先確認評估異動
             <button
               type="button"
               onClick={() => document.getElementById("sec-check")?.scrollIntoView({ behavior: "smooth", block: "start" })}
               className="ml-2 min-h-[40px] font-extrabold underline underline-offset-4"
             >
-              前往確認
+              前往
             </button>
           </div>
         )}
@@ -176,7 +170,7 @@ export function OutputCard({
         {writing && !has && (
           <div className="flex flex-col gap-3 py-2" aria-busy="true">
             <p className="flex items-center gap-2 font-bold text-ink-soft">
-              <Spinner size={18} /> 撰寫中，完成後可複製
+              <Spinner size={18} /> 完成後可複製
             </p>
             {[92, 80, 86, 60].map((w, i) => (
               <span key={i} className={cx("block h-4 animate-pulse rounded-full", st.tint)} style={{ width: `${w}%` }} />
@@ -200,7 +194,7 @@ export function OutputCard({
           <>
             {(out.status === "writing" || out.busy) && (
               <p className="mb-2 flex items-center gap-2 text-[0.95rem] font-bold text-ink-soft" aria-live="polite">
-                <Spinner size={16} /> {out.status === "writing" ? "正在產生新版本…" : "背景產生新版本中，完成後可比較"}
+                <Spinner size={16} /> {out.status === "writing" ? "正在產生新版本…" : "產生新版本中…"}
               </p>
             )}
             {warnings.length > 0 && warningsOpen && (
@@ -228,7 +222,10 @@ export function OutputCard({
                 新版本沒有產生成功：{out.error.message}
               </p>
             )}
-            <p className="mb-2 text-[0.9rem] font-bold text-ink-soft">{docHeader(kind, visit, patient, settings)}</p>
+            <p className="mb-2 flex flex-wrap items-center gap-2 text-[0.9rem] font-bold text-ink-soft">
+              {demo && <Pill tone="pending">示範資料</Pill>}
+              {docHeader(kind, visit, patient, settings)}
+            </p>
             <div className="whitespace-pre-line text-[1.08rem] leading-[1.75]">
               {body.split("\n\n").map((block, i) => {
                 const [first, ...rest] = block.split("\n");
@@ -293,7 +290,6 @@ export function OutputCard({
                 />
                 {!confirmed ? (
                   <div className="mt-3 flex flex-col gap-2">
-                    <p className="font-bold">中文版確認後才能翻譯。</p>
                     <Button
                       variant="primary"
                       icon={<ShieldCheck size={19} />}
@@ -302,7 +298,7 @@ export function OutputCard({
                         if (b.length) onBlocked("edu", b);
                       }}
                     >
-                      確認中文版
+                      確認中文版後翻譯
                     </Button>
                   </div>
                 ) : tr?.status === "writing" ? (
@@ -348,7 +344,7 @@ export function OutputCard({
         onClose={() => setMenu(false)}
         title={title}
         items={[
-          { label: "重新產生", icon: <RefreshCw size={21} />, hint: "可選更精簡、更詳細、家屬更好懂…", onSelect: () => setRegen(true) },
+          { label: "重新產生", icon: <RefreshCw size={21} />, hint: "更精簡、更詳細、改條列…", onSelect: () => setRegen(true) },
           { label: `版本紀錄（${out.versions.length}）`, icon: <History size={21} />, onSelect: () => setVersions("list") },
           ...(!confirmed && out.status !== "writing"
             ? [

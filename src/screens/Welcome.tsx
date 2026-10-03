@@ -82,8 +82,9 @@ export function Welcome() {
                 </>
               ) : (
                 <>
-                  <strong className="block text-[1.05rem]">AI 資料處理同意（第 {CONSENT_VERSION} 版）</strong>
-                  錄音與文件會送到轉文字服務與 Claude（Anthropic）整理成草稿，不用於訓練；伺服器不保存內容，資料留在這台裝置。AI 產出是草稿，須經你審閱確認。
+                  <strong className="block text-[1.05rem]">AI 資料處理同意</strong>
+                  錄音與文件會送到轉文字服務與 Claude（Anthropic）整理成草稿，不用於訓練、伺服器不保存；資料留在這台裝置。草稿須經你確認。
+                  <span className="text-ink-soft">（第 {CONSENT_VERSION} 版）</span>
                 </>
               )}
             </span>

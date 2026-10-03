@@ -56,11 +56,9 @@ export function ExportSheet({
   patient: Patient;
   onBlocked: (blockers: Blocker[]) => void;
 }) {
-  return (
-    <Sheet open={open} onClose={onClose} title="照護紀錄導出" full>
-      {open && <ExportBody visit={visit} patient={patient} onBlocked={onBlocked} />}
-    </Sheet>
-  );
+  // 關閉時卸載：下次打開回到填欄位的畫面。
+  if (!open) return null;
+  return <ExportBody visit={visit} patient={patient} onBlocked={onBlocked} onClose={onClose} />;
 }
 
 interface Ready {
@@ -68,13 +66,14 @@ interface Ready {
   filename: string;
 }
 
-function ExportBody({ visit, patient, onBlocked }: { visit: Visit; patient: Patient; onBlocked: (blockers: Blocker[]) => void }) {
+function ExportBody({ visit, patient, onBlocked, onClose }: { visit: Visit; patient: Patient; onBlocked: (blockers: Blocker[]) => void; onClose: () => void }) {
   const settings = useSettings();
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState<Ready | null>(null);
 
   const data = useMemo(() => careRecordData(visit, patient, settings), [visit, patient, settings]);
-  const missing = missingFields(visit, patient, settings);
+  // 機構名稱沒填時下面就有欄位，不再列在「未填」裡。
+  const missing = missingFields(visit, patient, settings).filter((m) => m !== "機構名稱");
   const services = serviceItemsFor(visit, patient);
   const vitalsCount = data.vitals ? Object.entries(data.vitals).filter(([k, v]) => k !== "measuredAt" && v !== "—").length : 0;
 
@@ -90,9 +89,7 @@ function ExportBody({ visit, patient, onBlocked }: { visit: Visit; patient: Pati
     setBusy(false);
   };
 
-  if (ready) return <ReadyView ready={ready} title={`${maskName(patient.name)} 照護紀錄 ${visit.date}`} onEdit={() => setReady(null)} />;
-
-  return (
+  const form = (
     <div className="flex flex-col gap-5 pb-4">
       <section className="rounded-[24px] bg-pdf-tint p-4 outline-ink">
         <p className="mb-2 flex items-center gap-2 font-round text-[1.15rem] font-extrabold">
@@ -110,7 +107,7 @@ function ExportBody({ visit, patient, onBlocked }: { visit: Visit; patient: Pati
       </section>
 
       {!settings.clinicName && (
-        <TextField label="機構名稱（印在封面與每頁抬頭）" value="" placeholder="例如 安心居家護理所" onSave={(v) => saveSettings({ clinicName: v })} />
+        <TextField label="機構名稱" value="" placeholder="例如 安心居家護理所" onSave={(v) => saveSettings({ clinicName: v })} />
       )}
 
       <Group title="這次訪視">
@@ -177,13 +174,25 @@ function ExportBody({ visit, patient, onBlocked }: { visit: Visit; patient: Pati
       </Group>
 
       <Events visit={visit} patient={patient} />
-
-      <div className="sticky bottom-0 -mx-1 bg-paper/95 px-1 pb-1 pt-2 backdrop-blur">
-        <Button variant="primary" size="xl" block icon={busy ? <Spinner size={20} /> : <FileText size={22} />} disabled={busy} onClick={confirm}>
-          確認並導出
-        </Button>
-      </div>
     </div>
+  );
+
+  return (
+    <Sheet
+      open
+      onClose={onClose}
+      title="照護紀錄導出"
+      full
+      footer={
+        ready ? undefined : (
+          <Button variant="primary" size="xl" block icon={busy ? <Spinner size={20} /> : <FileText size={22} />} disabled={busy} onClick={confirm}>
+            確認並導出
+          </Button>
+        )
+      }
+    >
+      {ready ? <ReadyView ready={ready} title={`${maskName(patient.name)} 照護紀錄 ${visit.date}`} onEdit={() => setReady(null)} /> : form}
+    </Sheet>
   );
 }
 
@@ -236,7 +245,7 @@ function ReadyView({ ready, title, onEdit }: { ready: Ready; title: string; onEd
     <div className="flex flex-col gap-4 pb-4">
       <p className="flex items-center gap-2 font-bold text-ok">
         <Critter kind="done" size={32} />
-        已確認・{title}
+        已確認，可複製或下載
       </p>
 
       <section className="flex flex-col gap-2.5 rounded-[26px] bg-card p-4 outline-ink">
@@ -373,7 +382,7 @@ function Events({ visit, patient }: { visit: Visit; patient: Patient }) {
   return (
     <Group title={`近 ${EVENT_WINDOW_DAYS} 天非計畫性住院／急診`}>
       {inWindow.length === 0 ? (
-        <p className="text-ink-soft">沒有紀錄（PDF 會印「無」）</p>
+        <p className="text-ink-soft">無</p>
       ) : (
         <ul className="flex flex-col gap-2">
           {inWindow.map((e) => (
@@ -415,7 +424,7 @@ function Events({ visit, patient }: { visit: Visit; patient: Patient }) {
             </Chip>
           ))}
         </div>
-        <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="發生原因，例如 發燒急診，診斷肺炎收住院" maxLength={200} className={inputClass} aria-label="發生原因" />
+        <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="發生原因" maxLength={200} className={inputClass} aria-label="發生原因" />
         <Button icon={<Plus size={18} />} disabled={!reason.trim()} onClick={add}>
           加入
         </Button>

@@ -150,7 +150,7 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
         async (p) => {
           const res = await moveVisit(visitId, p.id);
           if (!res) return;
-          toast(res.copied ? "已改到其他個案，之前複製的內容不適用，請重新確認後再複製" : "已改到其他個案", {
+          toast(res.copied ? "已改到其他個案，請重新確認後再複製" : "已改到其他個案", {
             action: { label: "復原", run: () => void res.undo() },
             ms: res.copied ? 6000 : undefined,
           });
@@ -189,7 +189,10 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
             }}
             className="sticker col-span-2 flex min-h-[96px] items-center gap-4 rounded-[26px] bg-audio px-5 text-left text-[#141414]"
           >
-            <Critter kind="audio" size={60} />
+            {/* 小怪物和方格同色：放在黑色圓底上（同錄音畫面）。 */}
+            <span className="grid h-[60px] w-[60px] shrink-0 place-items-center rounded-full bg-[#141414]">
+              <Critter kind="audio" size={40} />
+            </span>
             <span className="flex-1 text-[1.35rem] font-extrabold">開始錄音</span>
             <span className="grid h-12 w-12 place-items-center rounded-full bg-[#141414] text-white">
               <Mic size={24} strokeWidth={2.6} />
@@ -205,9 +208,17 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
                 p.kind === "photo" && "bg-edu",
                 p.kind === "pdf" && "bg-pdf",
                 p.kind === "audio" && "bg-pending",
+                // 從個案頁打開時沒有「新增個案」方格：「選錄音檔」佔滿一排，不要單獨吊在左下。
+                p.kind === "audio" && newPatient && "col-span-2 min-h-[96px]",
               )}
             >
-              <Critter kind={p.critter} size={46} />
+              {p.kind === "pdf" ? (
+                <span className="grid h-[46px] w-[46px] place-items-center rounded-full bg-[#141414]">
+                  <Critter kind={p.critter} size={32} />
+                </span>
+              ) : (
+                <Critter kind={p.critter} size={46} />
+              )}
               <span className="text-[1.12rem] font-extrabold">{p.label}</span>
             </button>
           ))}
@@ -331,7 +342,7 @@ function AssignSheet({ files, onClose, onPick, onCreate }: { files: File[] | nul
   );
 }
 
-const CONSENT_SCRIPT = "為了正確記錄今天的照護，我會錄音。錄音只用來整理護理紀錄，紀錄完成後就會刪除，不會給其他人。";
+const CONSENT_SCRIPT = "為了正確記錄今天的照護，我會錄音。錄音只用來整理護理記錄，完成後就刪除，不會給其他人。";
 
 function ConsentSheet({
   state,
@@ -345,11 +356,11 @@ function ConsentSheet({
   onRefuse: () => void;
 }) {
   return (
-    <Sheet open={!!state} onClose={onClose} title="錄音前，請先告知在場的人">
+    <Sheet open={!!state} onClose={onClose} title="錄音前請先告知">
       <blockquote className="mb-5 rounded-[26px] bg-audio-tint p-5 text-[1.3rem] font-bold leading-relaxed">「{CONSENT_SCRIPT}」</blockquote>
       <div className="flex flex-col gap-3 pb-2">
         <Button variant="primary" size="xl" block onClick={() => onAgree("個案本人")}>
-          個案本人同意，開始錄音
+          本人同意，開始錄音
         </Button>
         <Button variant="primary" size="xl" block onClick={() => onAgree("家屬")}>
           家屬同意，開始錄音

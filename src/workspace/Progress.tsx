@@ -38,7 +38,7 @@ export function Progress({ visit }: { visit: Visit }) {
             <p className="font-bold">{visit.error?.message ?? "請再試一次。"}</p>
           </div>
         </div>
-        <p className="mb-3 text-[0.95rem] text-ink-soft">錄音與文件都還在這台裝置。代碼：{visit.error?.code ?? "unknown"}</p>
+        <p className="mb-3 text-[0.95rem] text-ink-soft">資料仍在本機・代碼：{visit.error?.code ?? "unknown"}</p>
         {visit.error?.code === "unauthorized" ? (
           <div className="grid gap-2.5 sm:grid-cols-2">
             <Button variant="primary" size="lg" block icon={<KeyRound size={20} />} onClick={() => navigate("/settings")}>
@@ -63,9 +63,11 @@ export function Progress({ visit }: { visit: Visit }) {
         <Critter kind={visit.status === "waiting" ? "offline" : "processing"} size={56} animate={visit.status === "processing"} />
         <div>
           <h2 className="font-round text-[1.4rem] font-extrabold">
-            {visit.status === "waiting" ? (navigator.onLine ? "連不上 AI 伺服器，恢復後自動繼續" : "等網路，連上後自動繼續") : "整理中"}
+            {visit.status === "waiting" ? (navigator.onLine ? "連不上伺服器" : "等網路，連上後自動繼續") : "整理中"}
           </h2>
-          <p className="font-bold opacity-75">{visit.status === "waiting" ? "錄音與文件已安全存在這台裝置。" : slow ? "比平常慢，仍在處理中。可以先離開，好了會出現在今日清單。" : "可以先收東西，好了會出現在這裡。"}</p>
+          <p className="font-bold opacity-75">
+            {visit.status === "waiting" ? (navigator.onLine ? "恢復後自動繼續，資料已存在本機" : "資料已存在本機") : slow ? "比平常慢，可先離開，好了會出現在今日清單" : "可以先收東西，好了會出現在這裡。"}
+          </p>
         </div>
       </div>
       <ol className="grid grid-cols-2 gap-2 sm:grid-cols-4">

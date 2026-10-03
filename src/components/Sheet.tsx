@@ -77,7 +77,7 @@ export function Sheet({ open, onClose, title, children, footer, full, wide, tone
           </RoundButton>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 md:px-7">{children}</div>
-        {footer && <div className="safe-bottom border-t border-hairline px-5 pb-4 pt-3 md:px-7 md:pb-6">{footer}</div>}
+        {footer && <div className="border-t border-hairline px-5 pb-[max(env(safe-area-inset-bottom),16px)] pt-3 md:px-7 md:pb-6">{footer}</div>}
       </div>
     </div>,
     document.body,

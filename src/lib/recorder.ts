@@ -2,7 +2,7 @@ import { db, putBlob, updateVisit } from "./db";
 import { TRIAL } from "./env";
 import { newId, type AudioPart } from "./model";
 
-export const TRIAL_NO_MIC = "試用版不能用麥克風，也不會真的轉文字。選手機裡任何一個錄音檔就能體驗流程，三份內容會用示範逐字稿產生（標示示範資料）。";
+export const TRIAL_NO_MIC = "試用版不錄音，選一個錄音檔就能體驗（示範資料）";
 
 export type RecState = "idle" | "starting" | "recording" | "paused" | "error";
 

@@ -149,8 +149,9 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
   );
 }
 
+// 聚焦時改成 3px 粗墨框：.outline-ink 是未分層的 CSS，要用 ! 才蓋得過。
 export const inputClass =
-  "w-full min-h-[52px] rounded-2xl bg-card px-4 text-[1.05rem] text-ink outline-ink placeholder:text-ink-faint focus:outline-none focus:shadow-[inset_0_0_0_3px_var(--ink)]";
+  "w-full min-h-[52px] rounded-2xl bg-card px-4 text-[1.05rem] text-ink outline-ink placeholder:text-ink-faint focus:outline-none focus:shadow-[inset_0_0_0_3px_var(--ink)]!";
 
 export function Spinner({ size = 20 }: { size?: number }) {
   return (

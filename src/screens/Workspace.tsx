@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router";
-import { ChevronLeft, ChevronRight, ClipboardList, Copy, FileText, FileUp, Info, Mic, MoreHorizontal, Pencil, Shuffle, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, ClipboardList, Copy, FileText, FileUp, Info, Mic, MoreHorizontal, Pencil, Repeat, Shuffle, Trash2 } from "lucide-react";
 import { VITAL_LABEL, type DocKind, type VitalKey } from "../../shared/types";
 import { useFlows } from "../app/Flows";
 import { ActionSheet } from "../components/ActionSheet";
@@ -13,7 +13,7 @@ import { Button, Pill, RoundButton, cx } from "../components/ui";
 import { ackWarnings, addMaterial, blockersFor, confirmAll, confirmAndCopy, deleteVisit, setVisitKind, storageErrorMessage, storeSummary, type Blocker } from "../lib/actions";
 import { isDemoEngine } from "../lib/api";
 import { docTitle } from "../lib/compose";
-import { ageOf, clock, longDate, shortDate } from "../lib/format";
+import { ageOf, clock, shortDate } from "../lib/format";
 import { useEngine, useMedia, usePatient, useSettings, useVisit } from "../lib/hooks";
 import type { Patient, Visit } from "../lib/model";
 import { nextDue } from "../lib/pipeline";
@@ -144,7 +144,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
             <span className="block truncate text-[0.88rem] font-bold text-ink-soft">
               {visit.kind === "first" ? "初訪・" : ""}
               {shortDate(visit.date)}
-              {visit.recordingStartedAt && ` ${clock(visit.recordingStartedAt)}${visit.recordingEndedAt ? `-${clock(visit.recordingEndedAt)}` : ""}`}
+              {visit.recordingStartedAt ? ` ${clock(visit.recordingStartedAt)}${visit.recordingEndedAt ? `-${clock(visit.recordingEndedAt)}` : ""}` : visit.time ? ` ${visit.time}` : ""}
               {visit.parts.length ? `・錄音 ${visit.parts.length} 段` : ""}
               {visit.documents.length ? `・文件 ${visit.documents.length} 份` : ""}
             </span>
@@ -160,7 +160,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
           {[
             { id: "sec-check", label: "核對" },
             { id: "sec-vitals", label: "數值" },
-            ...KINDS.map((k) => ({ id: `sec-${k}`, label: docTitle(k, settings).replace("家屬", "") })),
+            ...KINDS.map((k) => ({ id: `sec-${k}`, label: docTitle(k, settings).slice(-2) })),
           ].map((j) => (
             <button key={j.id} type="button" onClick={() => jump(j.id)} className="min-h-[40px] shrink-0 rounded-full bg-card px-4 text-[0.95rem] font-bold outline-ink">
               {j.label}
@@ -187,27 +187,27 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
           ? "sticky bottom-4 mt-4"
           : embedded
             ? "sticky bottom-0 -mx-4 bg-paper/90 px-4 pb-3 pt-2 backdrop-blur-md md:-mx-6 md:px-6"
-            : // 手機：停在底部導覽上方（導覽每個畫面都在）。
-              "sticky bottom-[calc(env(safe-area-inset-bottom)+78px)] -mx-4 bg-paper/90 px-4 pb-2 pt-2 backdrop-blur-md md:-mx-6 md:px-6",
+            : // 手機：停在底部導覽正上方（導覽每個畫面都在）。
+              "sticky bottom-[var(--nav-h)] -mx-4 bg-paper/90 px-4 pb-3 pt-2 backdrop-blur-md md:-mx-6 md:px-6",
       )}
     >
       <div className="flex items-stretch gap-2.5">
-        <Button variant="primary" size="xl" className="min-w-0 flex-1" icon={<Copy size={22} />} onClick={copyAll}>
-          {allConfirmed
-            ? "已全部確認・再全部複製"
-            : available.length < 3
-              ? `全部確認並複製（${available.length} 份・${KINDS.filter((k) => !available.includes(k)).map((k) => docTitle(k, settings).slice(-2)).join("、")}未完成）`
-              : "全部確認並複製（3 份）"}
+        {/* 份數已寫在各份標題上，按鈕只寫動作（手機寬度放得下）。 */}
+        <Button variant="primary" size={desktop ? "xl" : "lg"} className="min-w-0 flex-1" icon={<Copy size={22} />} onClick={copyAll}>
+          {allConfirmed ? "再全部複製" : available.length < 3 ? `確認並複製 ${available.length} 份` : "全部確認並複製"}
         </Button>
         <button
           type="button"
           onClick={() => setExportOpen(true)}
-          aria-label="照護紀錄導出（PDF）"
-          title="照護紀錄導出（PDF）"
-          className="sticker flex min-h-[68px] shrink-0 flex-col items-center justify-center gap-0.5 rounded-[24px] bg-pdf px-3.5 text-[0.8rem] font-extrabold text-[#141414]"
+          aria-label="照護紀錄導出"
+          title="照護紀錄導出"
+          className={cx(
+            "sticker flex shrink-0 flex-col items-center justify-center gap-0.5 rounded-[24px] bg-pdf px-3.5 text-[0.8rem] font-extrabold text-[#141414]",
+            desktop ? "min-h-[68px]" : "min-h-[60px]",
+          )}
         >
           <FileText size={22} strokeWidth={2.4} />
-          PDF
+          導出
         </button>
       </div>
     </div>
@@ -279,7 +279,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
       {header}
       <div className="px-4 pb-6 pt-2 md:px-6">
         {visit.status === "done" && (
-          <div className="mb-4 flex items-center gap-3 rounded-[24px] bg-ok-tint px-4 py-3 font-bold text-ok">
+          <div id="sec-check" className="mb-4 flex scroll-mt-32 items-center gap-3 rounded-[24px] bg-ok-tint px-4 py-3 font-bold text-ok">
             <Critter kind="done" size={34} />
             已完成・{visit.reviewedBy ?? ""} {clock(visit.completedAt)}
           </div>
@@ -326,7 +326,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
       <Sheet
         open={!!blocked}
         onClose={() => setBlocked(null)}
-        title="複製前還有幾件要先看"
+        title="複製前先處理"
         footer={
           <Button
             variant="primary"
@@ -356,7 +356,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
         }
       >
         {blocked && <OtherBlockers visit={visit} kind={blocked.kind} />}
-        <ReviewBlock visit={visit} patient={patient} onEditVital={(k) => setVitalsOpen({ focus: k })} />
+        <ReviewBlock visit={visit} patient={patient} onEditVital={(k) => setVitalsOpen({ focus: k })} bare />
       </Sheet>
 
       <ActionSheet
@@ -366,7 +366,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
         items={[
           { label: "補資料（PDF、照片、錄音檔）", icon: <FileUp size={21} />, onSelect: () => fileInput.current?.click() },
           ...(reviewing && available.length > 0
-            ? [{ label: "照護紀錄導出（PDF）", icon: <FileText size={21} />, hint: "含護理紀錄、生命徵象、護理計畫、家屬衛教，可分享到 LINE", onSelect: () => setExportOpen(true) }]
+            ? [{ label: "照護紀錄導出", icon: <FileText size={21} />, hint: "複製轉發 LINE，或下載 PDF", onSelect: () => setExportOpen(true) }]
             : []),
           ...(visit.status !== "scheduled" ? [{ label: "數值速記", icon: <Pencil size={21} />, onSelect: () => setVitalsOpen({ focus: null }) }] : []),
           {
@@ -378,7 +378,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
           { label: `全人評估（${completedCount(patient.assessment)}/13）`, icon: <ClipboardList size={21} />, onSelect: () => navigate(`/patients/${patient.id}/assessment`) },
           {
             label: visit.kind === "first" ? "改為再次訪視" : "改為初次訪視",
-            icon: <Shuffle size={21} />,
+            icon: <Repeat size={21} />,
             hint: visit.kind === "first" ? "不需全人評估，計畫沿用現行版本" : "需完成全人評估，計畫依評估擬定",
             onSelect: () => setVisitKind(visit.id, visit.kind === "first" ? "follow" : "first"),
           },
@@ -386,7 +386,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
             label: "刪除這筆紀錄",
             icon: <Trash2 size={21} />,
             danger: true,
-            hint: "錄音、文件與三份內容都會刪除，5 秒內可復原",
+            hint: "5 秒內可復原",
             onSelect: async () => {
               const undo = await deleteVisit(visit.id);
               if (!embedded) navigate("/", { replace: true });
@@ -439,7 +439,7 @@ function AssessmentStrip({ patient }: { patient: Patient }) {
       className={cx("flex min-h-[56px] items-center gap-3 rounded-[22px] px-4 font-bold outline-ink", n < 13 ? "bg-pdf-tint" : "bg-card")}
     >
       <ClipboardList size={20} />
-      <span className="min-w-0 flex-1">{n < 13 ? "初次訪視：全人評估還沒完成" : "初次訪視：全人評估已完成"}</span>
+      <span className="min-w-0 flex-1">全人評估</span>
       <span className="num">{n}/13</span>
       <ChevronRight size={18} />
     </Link>
@@ -455,7 +455,7 @@ function Brief({ visit, patient, onImport }: { visit: Visit; patient: Patient; o
     <div className="flex flex-col gap-4">
       {visit.kind === "first" && <AssessmentCard patient={patient} highlight />}
       <section className="rounded-[30px] bg-night p-5 text-night-ink">
-        <p className="mb-1 font-bold opacity-75">{longDate(visit.date)}{visit.time ? ` ${visit.time}` : ""}・訪前提要</p>
+        <p className="mb-1 font-bold opacity-75">訪前提要</p>
         <p className="font-round text-[1.5rem] font-extrabold leading-snug">{patient.last ? `上次（${shortDate(patient.last.date)}）：${patient.last.summary}` : "第一次訪視"}</p>
         {patient.diagnoses.length > 0 && <p className="mt-2 font-bold opacity-80">{patient.diagnoses.join("、")}</p>}
       </section>

@@ -4,7 +4,7 @@ import { Plus, Search } from "lucide-react";
 import { useFlows } from "../app/Flows";
 import { Critter, avatarSpec } from "../components/Critter";
 import { Name, RevealButton } from "../components/Name";
-import { Chip, Pill, RoundButton, cx, inputClass } from "../components/ui";
+import { Button, Chip, Pill, RoundButton, cx, inputClass } from "../components/ui";
 import { ageOf, daysUntil, maskName, todayStr } from "../lib/format";
 import { useAllVisits, usePatients } from "../lib/hooks";
 import type { Patient } from "../lib/model";
@@ -78,9 +78,9 @@ export function Patients() {
         {(
           [
             ["all", "全部"],
-            ["today", "今日訪視"],
+            ["today", "今日"],
             ["open", "待記錄"],
-            ["due", "管路 7 天內到期"],
+            ["due", "管路將到期"],
           ] as [Filter, string][]
         ).map(([f, label]) => (
           <Chip key={f} active={filter === f} onClick={() => setFilter(f)} className="shrink-0">
@@ -93,6 +93,11 @@ export function Patients() {
         <div className="flex flex-col items-center gap-3 rounded-[30px] bg-card px-6 py-10 text-center outline-ink">
           <Critter kind="empty" size={80} />
           <p className="font-bold">{q ? `找不到「${q}」` : patients.length ? "這個分類沒有個案" : "還沒有個案"}</p>
+          {!q && patients.length === 0 && (
+            <Button variant="primary" size="lg" onClick={() => flows.editPatient(null, (p) => navigate(`/patients/${p.id}`))}>
+              新增個案
+            </Button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-4">
@@ -122,10 +127,12 @@ function Folder({ p, visits, due, index }: { p: Patient; visits: number; due: bo
         <span className="truncate text-[0.88rem] font-bold opacity-80">
           {[age ? `${age} 歲` : null, p.gender, p.familyCallsAs].filter(Boolean).join(" · ")}
         </span>
-        <span className="mt-1.5 flex flex-wrap gap-1">
-          <span className="rounded-full bg-white/70 px-2 py-0.5 text-[0.78rem] font-bold">{visits} 次訪視</span>
-          {due && <span className="rounded-full bg-[#141414] px-2 py-0.5 text-[0.78rem] font-bold text-white">管路將到期</span>}
-        </span>
+        {(visits > 0 || due) && (
+          <span className="mt-1.5 flex flex-wrap gap-1">
+            {visits > 0 && <span className="rounded-full bg-white/70 px-2 py-0.5 text-[0.78rem] font-bold">{visits} 次訪視</span>}
+            {due && <span className="rounded-full bg-[#141414] px-2 py-0.5 text-[0.78rem] font-bold text-white">管路將到期</span>}
+          </span>
+        )}
       </span>
     </Link>
   );
