@@ -27,12 +27,9 @@ import {
 } from "../export/careRecord";
 import type { CareRecordData } from "../export/types";
 
-// 版面模組另外開發中：用 glob 載入，檔案出現前開發伺服器也能運作。
-const pdfModules = import.meta.glob<{ renderCareRecordPdf: (d: CareRecordData, url: (f: string) => string) => Promise<Blob> }>("../export/careRecordPdf.ts");
+// pdfmake 與版面模組很大，按下導出時才載入。
 async function renderCareRecordPdf(data: CareRecordData, url: (f: string) => string): Promise<Blob> {
-  const load = pdfModules["../export/careRecordPdf.ts"];
-  if (!load) throw new Error("PDF 版面模組尚未完成。");
-  return (await load()).renderCareRecordPdf(data, url);
+  return (await import("../export/careRecordPdf")).renderCareRecordPdf(data, url);
 }
 import { canShareFile, saveFile, shareFile, shareText } from "../export/share";
 

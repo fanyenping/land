@@ -77,7 +77,7 @@ async function run(name, viewport, isMobile) {
   await page.getByRole("button", { name: "數值速記" }).click();
   await page.getByLabel("體溫").fill("36.8");
   await shot("08-vitals-sheet");
-  await page.getByRole("button", { name: "好", exact: true }).click();
+  await page.getByRole("button", { name: "儲存", exact: true }).click();
   await page.getByRole("button", { name: "完成訪視" }).click();
   await page.waitForURL(/\/v\/[^/]+$/);
   await shot("09-processing");
@@ -177,9 +177,9 @@ async function deep() {
   await shot("05-translate");
 
   // 照護紀錄導出：補欄位 → 產生 PDF → 下載並檢查內容
-  await page.getByRole("button", { name: "照護紀錄導出（PDF）" }).click();
+  await page.getByRole("button", { name: "照護紀錄導出", exact: true }).click();
   const dlg = page.getByRole("dialog");
-  // 面板底部有固定的「確認並導出」：先把目標捲到中間再點，避免被擋住。
+  // 先把目標捲到中間再點（面板內容可捲動）。
   const tap = async (loc) => {
     await loc.evaluate((e) => e.scrollIntoView({ block: "center" }));
     await loc.click();

@@ -57,7 +57,7 @@ export function Recording() {
   }, [live, rec.state]);
 
   // 錄音中按導覽的「＋」不開新紀錄：開始另一筆錄音會停掉這一筆。
-  const onPlus = () => (live ? toast("先完成這次訪視") : flows.openNew());
+  const onPlus = () => (live ? toast("先完成這次訪視", { error: true }) : flows.openNew());
 
   if (visit === null || patient === null) {
     return (
