@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
 import { ChevronLeft, Copy, FileUp, Info, Mic, MoreHorizontal, Pencil, Shuffle, Trash2 } from "lucide-react";
 import { VITAL_LABEL, type DocKind, type VitalKey } from "../../shared/types";
 import { useFlows } from "../app/Flows";
@@ -57,6 +57,7 @@ export function Workspace({ visitId, embedded }: { visitId: string; embedded?: b
 
 function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Patient; embedded?: boolean }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const flows = useFlows();
   const toast = useToast();
   const settings = useSettings();
@@ -82,18 +83,18 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
   const onBlocked = useCallback((kind: DocKind | "all", blockers: Blocker[]) => setBlocked({ kind, blockers }), []);
 
   const copyAll = useCallback(async () => {
-    const res = await confirmAll(visit, patient);
+    const res = await confirmAll(visit, patient, settings);
     if (res.blockers.length) return onBlocked("all", res.blockers);
     if (!res.ok) return toast("無法寫入剪貼簿");
     navigator.vibrate?.(40);
     toast(`已確認並複製 ${res.kinds.length} 份`, { big: true });
-  }, [visit, patient, onBlocked, toast]);
+  }, [visit, patient, onBlocked, toast, settings]);
 
   /** 電腦版依序複製（C）：每次都寫出個案名，避免貼錯人。 */
   const copyNext = useCallback(async () => {
     const next = available.find((k) => !visit.outputs[k].copiedAt && !(k === "edu" && visit.outputs.edu.sharedAt));
     if (!next) return toast("這位三份都複製過了");
-    const res = await confirmAndCopy(visit, next, patient);
+    const res = await confirmAndCopy(visit, next, patient, settings);
     if (res.blockers.length) return onBlocked(next, res.blockers);
     if (!res.ok) return toast("無法寫入剪貼簿");
     const after = available.slice(available.indexOf(next) + 1).find((k) => !visit.outputs[k].copiedAt);
@@ -125,7 +126,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
     <header className={cx("z-30 bg-paper/90 backdrop-blur-md", embedded ? "sticky top-0" : "sticky top-0 pt-[max(env(safe-area-inset-top),10px)]")}>
       <div className="flex items-center gap-2 px-4 py-2 md:px-6">
         {!embedded && (
-          <RoundButton label="返回" onClick={() => (window.history.length > 1 ? navigate(-1) : navigate("/"))}>
+          <RoundButton label="返回" onClick={() => (location.key !== "default" ? navigate(-1) : navigate("/"))}>
             <ChevronLeft size={24} strokeWidth={2.6} />
           </RoundButton>
         )}
@@ -298,7 +299,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
               setBlocked(null);
               if (k === "all") await copyAll();
               else if (k) {
-                const res = await confirmAndCopy(visit, k, patient);
+                const res = await confirmAndCopy(visit, k, patient, settings);
                 if (res.blockers.length) onBlocked(k, res.blockers);
                 else if (res.ok) toast(`已確認並複製${docTitle(k, settings)}（${res.chars} 字）`);
                 else toast("無法寫入剪貼簿，請長按文字自行複製");

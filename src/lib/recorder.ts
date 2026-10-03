@@ -1,5 +1,8 @@
 import { db, putBlob, updateVisit } from "./db";
+import { TRIAL } from "./env";
 import { newId, type AudioPart } from "./model";
+
+const TRIAL_NO_MIC = "試用網址不能使用麥克風。請先用手機內建的錄音 App 錄好，再按「選錄音檔」匯入。";
 
 export type RecState = "idle" | "starting" | "recording" | "paused" | "error";
 
@@ -70,7 +73,7 @@ class Recorder {
       await this.stop();
     }
     if (!this.supported) {
-      this.set({ state: "error", error: "這個瀏覽器不支援錄音，請改用「選錄音檔」。", visitId });
+      this.set({ state: "error", error: TRIAL ? TRIAL_NO_MIC : "這個瀏覽器不支援錄音，請改用「選錄音檔」。", visitId });
       return false;
     }
     this.set({ state: "starting", visitId, elapsedMs: 0, level: 0, error: null });
@@ -80,8 +83,9 @@ class Recorder {
       });
     } catch (err) {
       const name = (err as DOMException).name;
-      const msg =
-        name === "NotAllowedError"
+      const msg = TRIAL
+        ? TRIAL_NO_MIC
+        : name === "NotAllowedError"
           ? "沒有麥克風權限。請在瀏覽器或系統設定允許「麥克風」後再試一次。"
           : name === "NotFoundError"
             ? "找不到麥克風。可以改用「選錄音檔」匯入。"

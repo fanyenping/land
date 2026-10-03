@@ -7,6 +7,7 @@ import { useToast } from "../components/Toast";
 import { Button, Pill, RoundButton, Segmented, Spinner, cx } from "../components/ui";
 import { ackWarnings, blockersFor, confirmAndCopy, confirmOnly, decideSuggestion, hasOpenWarnings, markEduShared, resolveCandidate, type Blocker } from "../lib/actions";
 import { charCount, docBody, docHeader, docTitle, eduShareText, shareToLine, writeClipboard } from "../lib/compose";
+import { TRIAL } from "../lib/env";
 import { clock } from "../lib/format";
 import { useSettings } from "../lib/hooks";
 import type { Patient, Visit } from "../lib/model";
@@ -73,7 +74,7 @@ export function OutputCard({
   };
 
   const copy = async () => {
-    const res = await confirmAndCopy(visit, kind, patient);
+    const res = await confirmAndCopy(visit, kind, patient, settings);
     if (res.blockers.length) return onBlocked(kind, res.blockers);
     if (!res.ok) return toast("無法寫入剪貼簿，請長按文字自行複製");
     flash();
@@ -82,14 +83,17 @@ export function OutputCard({
 
   const shareEdu = async (withLang?: TranslateLang) => {
     // 已確認也要再檢查：補資料或改個案後正在重新整理時不能分享。
-    const blockers = confirmed ? blockersFor(visit, "edu") : await confirmOnly(visit, "edu");
+    const blockers = blockersFor(visit, "edu");
     if (blockers.length) return onBlocked("edu", blockers);
     const text = eduShareText(visit, patient, settings, withLang);
-    await writeClipboard(text);
+    // 先寫剪貼簿（點擊後第一個非同步動作），再確認與分享。
+    const copied = await writeClipboard(text);
+    if (!confirmed) await confirmOnly(visit, "edu");
     const how = await shareToLine(text);
     if (how === "cancelled") return;
+    if (how === "copied" && !copied) return toast("無法寫入剪貼簿，請長按文字自行複製");
     await markEduShared(visit.id);
-    toast(how === "line" ? "已複製，正在開啟 LINE" : "已分享");
+    toast(how === "line" ? "已複製，正在開啟 LINE" : how === "copied" ? "已複製，請到 LINE 貼上給家屬" : "已分享");
   };
 
   const tr = visit.translations[lang];
@@ -240,7 +244,7 @@ export function OutputCard({
               {kind === "edu" ? (
                 <>
                   <Button variant="primary" size="lg" block icon={<Send size={20} />} onClick={() => shareEdu()} disabled={out.status === "writing"}>
-                    {confirmed ? "再分享到 LINE" : "確認並分享到 LINE"}
+                    {TRIAL ? (confirmed ? "再複製給家屬（貼到 LINE）" : "確認並複製給家屬（貼到 LINE）") : confirmed ? "再分享到 LINE" : "確認並分享到 LINE"}
                   </Button>
                   <div className="grid grid-cols-2 gap-2.5">
                     <Button block icon={justCopied ? <Check size={20} strokeWidth={3} /> : <Copy size={19} />} onClick={copy} disabled={out.status === "writing"}>

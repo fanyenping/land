@@ -10,6 +10,7 @@ import { isDemoEngine, probeEngine, setAccessCode, verifyAccessCode } from "../l
 import { applyRetention, exportAll, saveSettings, wipeAll } from "../lib/db";
 import { clock, shortDate } from "../lib/format";
 import { useEngine, useSettings } from "../lib/hooks";
+import { TRIAL } from "../lib/env";
 import { CONSENT_VERSION, type Settings } from "../lib/model";
 import { seedDemo } from "../lib/seed";
 
@@ -88,63 +89,75 @@ export function SettingsScreen() {
       </Group>
 
       <Group title="AI 服務" tone="bg-pending">
-        <div className="flex items-center gap-3 rounded-2xl bg-card p-3.5 outline-ink">
-          <Critter kind={engine ? (isDemoEngine(engine) ? "pending" : "done") : "processing"} size={44} animate={!engine} />
-          <div className="min-w-0 flex-1">
-            <p className="font-extrabold">
-              {!engine ? "檢查中" : engine.kind === "local" ? "連不上 AI 伺服器" : engine.health.llm.mode === "demo" ? "伺服器示範模式" : `Claude 已連線`}
-              {s.demoMode && <span className="ml-2 inline-flex rounded-full bg-pending px-2.5 py-0.5 text-[0.85rem] text-[#141414]">示範模式開啟中</span>}
-            </p>
-            <p className="text-[0.9rem] text-ink-soft">
-              {engine?.kind === "server"
-                ? `轉文字：${STT_LABEL[engine.health.stt] ?? engine.health.stt}・模型：${engine.health.llm.model ?? "示範"}`
-                : engine?.kind === "local"
-                  ? `${engine.reason}・紀錄會先存在這台裝置，連上後自動接續`
-                  : ""}
-            </p>
+        {TRIAL ? (
+          <div className="flex items-center gap-3 rounded-2xl bg-card p-3.5 outline-ink">
+            <Critter kind="pending" size={44} />
+            <div className="min-w-0 flex-1">
+              <p className="font-extrabold">試用版</p>
+              <p className="text-[0.9rem] text-ink-soft">不連 AI 伺服器，錄音與文件都用內建示範內容產生三份，輸出標示「示範資料」。資料只存在這台裝置。</p>
+            </div>
           </div>
-          <Button
-            size="sm"
-            icon={testing ? <Spinner size={16} /> : <RefreshCw size={16} />}
-            onClick={async () => {
-              setTesting(true);
-              const e = await probeEngine(true);
-              setTesting(false);
-              toast(e.kind === "server" ? "伺服器連線正常" : "仍連不上伺服器");
-            }}
-          >
-            測試
-          </Button>
-        </div>
-        {(s.accessCode || (engine?.kind === "server" && engine.health.auth)) && (
-          <TextSetting
-            label="機構通行碼"
-            value={s.accessCode}
-            placeholder="向機構管理者索取"
-            secret
-            onSave={async (v) => {
-              await saveSettings({ accessCode: v });
-              setAccessCode(v);
-              if (!v) return "已清除";
-              const r = await verifyAccessCode();
-              return r === "ok" ? "通行碼正確" : r === "wrong" ? "通行碼不正確，請再確認" : "已儲存，連上網路後生效";
-            }}
-          />
+        ) : (
+          <>
+            <div className="flex items-center gap-3 rounded-2xl bg-card p-3.5 outline-ink">
+              <Critter kind={engine ? (isDemoEngine(engine) ? "pending" : "done") : "processing"} size={44} animate={!engine} />
+              <div className="min-w-0 flex-1">
+                <p className="font-extrabold">
+                  {!engine ? "檢查中" : engine.kind === "local" ? "連不上 AI 伺服器" : engine.health.llm.mode === "demo" ? "伺服器示範模式" : `Claude 已連線`}
+                  {s.demoMode && <span className="ml-2 inline-flex rounded-full bg-pending px-2.5 py-0.5 text-[0.85rem] text-[#141414]">示範模式開啟中</span>}
+                </p>
+                <p className="text-[0.9rem] text-ink-soft">
+                  {engine?.kind === "server"
+                    ? `轉文字：${STT_LABEL[engine.health.stt] ?? engine.health.stt}・模型：${engine.health.llm.model ?? "示範"}`
+                    : engine?.kind === "local"
+                      ? `${engine.reason}・紀錄會先存在這台裝置，連上後自動接續`
+                      : ""}
+                </p>
+              </div>
+              <Button
+                size="sm"
+                icon={testing ? <Spinner size={16} /> : <RefreshCw size={16} />}
+                onClick={async () => {
+                  setTesting(true);
+                  const e = await probeEngine(true);
+                  setTesting(false);
+                  toast(e.kind === "server" ? "伺服器連線正常" : "仍連不上伺服器");
+                }}
+              >
+                測試
+              </Button>
+            </div>
+            {(s.accessCode || (engine?.kind === "server" && engine.health.auth)) && (
+              <TextSetting
+                label="機構通行碼"
+                value={s.accessCode}
+                placeholder="向機構管理者索取"
+                secret
+                onSave={async (v) => {
+                  await saveSettings({ accessCode: v });
+                  setAccessCode(v);
+                  if (!v) return "已清除";
+                  const r = await verifyAccessCode();
+                  return r === "ok" ? "通行碼正確" : r === "wrong" ? "通行碼不正確，請再確認" : "已儲存，連上網路後生效";
+                }}
+              />
+            )}
+            <Row label="示範模式" hint="開啟後新紀錄一律用內建示範內容，不呼叫 AI，輸出會標示「示範資料」。給教學或試用。">
+              <Segmented
+                label="示範模式"
+                value={s.demoMode ? "on" : "off"}
+                onChange={(v) => {
+                  set({ demoMode: v === "on" });
+                  toast(v === "on" ? "示範模式已開啟" : "示範模式已關閉");
+                }}
+                options={[
+                  { value: "off", label: "關閉" },
+                  { value: "on", label: "開啟" },
+                ]}
+              />
+            </Row>
+          </>
         )}
-        <Row label="示範模式" hint="開啟後新紀錄一律用內建示範內容，不呼叫 AI，輸出會標示「示範資料」。給教學或試用。">
-          <Segmented
-            label="示範模式"
-            value={s.demoMode ? "on" : "off"}
-            onChange={(v) => {
-              set({ demoMode: v === "on" });
-              toast(v === "on" ? "示範模式已開啟" : "示範模式已關閉");
-            }}
-            options={[
-              { value: "off", label: "關閉" },
-              { value: "on", label: "開啟" },
-            ]}
-          />
-        </Row>
       </Group>
 
       <Group title="資料與隱私" tone="bg-pdf">
@@ -175,22 +188,24 @@ export function SettingsScreen() {
           </div>
         </Row>
         <div className="grid gap-2.5 sm:grid-cols-2">
-          <Button
-            size="lg"
-            icon={<Download size={19} />}
-            onClick={async () => {
-              const data = await exportAll();
-              const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-              const a = document.createElement("a");
-              a.href = URL.createObjectURL(blob);
-              a.download = `taione-care-${new Date().toISOString().slice(0, 10)}.json`;
-              a.click();
-              setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-              toast("已匯出（不含錄音檔）");
-            }}
-          >
-            匯出紀錄
-          </Button>
+          {!TRIAL && (
+            <Button
+              size="lg"
+              icon={<Download size={19} />}
+              onClick={async () => {
+                const data = await exportAll();
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(blob);
+                a.download = `taione-care-${new Date().toISOString().slice(0, 10)}.json`;
+                a.click();
+                setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+                toast("已匯出（不含錄音檔）");
+              }}
+            >
+              匯出紀錄
+            </Button>
+          )}
           <Button
             size="lg"
             onClick={async () => {
@@ -226,7 +241,9 @@ export function SettingsScreen() {
               className="flex-1"
               onClick={async () => {
                 await wipeAll();
-                window.location.assign("/welcome");
+                // 試用版在分享網頁的框架裡：重新載入同一頁（記憶體路由會從頭開始）。
+                if (TRIAL) window.location.reload();
+                else window.location.assign("/welcome");
               }}
             >
               清除

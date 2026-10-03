@@ -1,13 +1,42 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 
-export default defineConfig({
+const FONTS_CSS =
+  "https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=Chiron+GoRound+TC:wght@200..900&family=Noto+Sans+TC:wght@100..900&display=swap";
+
+/**
+ * 試用版：字型改由 Google Fonts 載入（分享網頁只允許這個字型來源）、不註冊 Service Worker，
+ * 輸出單一 JS 與 CSS，之後由 scripts/build-trial.mjs 組成一個網頁檔。
+ */
+function trialBuild(): Plugin {
+  const EMPTY = "\0trial-empty";
+  return {
+    name: "taione-trial",
+    enforce: "pre",
+    resolveId(id) {
+      if (id.startsWith("@fontsource")) return EMPTY;
+      if (id === "virtual:pwa-register") return `${EMPTY}-pwa`;
+      return null;
+    },
+    load(id) {
+      if (id === EMPTY) return "";
+      if (id === `${EMPTY}-pwa`) return "export function registerSW() { return () => undefined; }";
+      return null;
+    },
+    transformIndexHtml() {
+      return [{ tag: "link", attrs: { rel: "stylesheet", href: FONTS_CSS }, injectTo: "head" }];
+    },
+  };
+}
+
+export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     tailwindcss(),
-    VitePWA({
+    mode === "trial" ? trialBuild() : null,
+    mode === "trial" ? null : VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["icon.svg", "favicon.svg", "icon-maskable.svg"],
       manifest: {
@@ -44,5 +73,8 @@ export default defineConfig({
     port: 5173,
     proxy: { "/api": "http://localhost:8787" },
   },
-  build: { target: "es2022", chunkSizeWarningLimit: 1500 },
-});
+  build:
+    mode === "trial"
+      ? { target: "es2022", outDir: "dist-trial", assetsInlineLimit: 100_000_000, cssCodeSplit: false, chunkSizeWarningLimit: 4000, rollupOptions: { output: { inlineDynamicImports: true } } }
+      : { target: "es2022", chunkSizeWarningLimit: 1500 },
+}));

@@ -110,9 +110,10 @@
 }
 
 @theme {
-  --font-sans: "Noto Sans TC Variable", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
-  --font-round: "Chiron GoRound TC Variable", "Noto Sans TC Variable", "PingFang TC", sans-serif;
-  --font-num: "Bricolage Grotesque Variable", "Noto Sans TC Variable", ui-sans-serif, sans-serif;
+  /* 「… Variable」是自帶字型檔（App 版）；同名不帶 Variable 的是 Google Fonts（試用版分享網頁）。 */
+  --font-sans: "Noto Sans TC Variable", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --font-round: "Chiron GoRound TC Variable", "Chiron GoRound TC", "Noto Sans TC Variable", "Noto Sans TC", "PingFang TC", sans-serif;
+  --font-num: "Bricolage Grotesque Variable", "Bricolage Grotesque", "Noto Sans TC Variable", "Noto Sans TC", ui-sans-serif, sans-serif;
 
   --color-paper: var(--paper);
   --color-card: var(--card);

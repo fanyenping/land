@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { CalendarPlus, ChevronLeft, ChevronRight, Copy, FileUp, Mic, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useFlows } from "../app/Flows";
 import { Critter } from "../components/Critter";
@@ -19,6 +19,7 @@ import { visitStatus } from "../lib/status";
 export function PatientDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const patient = usePatient(id);
   const visits = usePatientVisits(id);
   const flows = useFlows();
@@ -48,7 +49,7 @@ export function PatientDetail() {
   return (
     <div className="mx-auto w-full max-w-[880px] px-4 pt-[max(env(safe-area-inset-top),16px)] md:px-8 lg:pt-8">
       <header className="mb-4 flex items-center gap-2">
-        <RoundButton label="返回" onClick={() => (window.history.length > 1 ? navigate(-1) : navigate("/patients"))}>
+        <RoundButton label="返回" onClick={() => (location.key !== "default" ? navigate(-1) : navigate("/patients"))}>
           <ChevronLeft size={24} strokeWidth={2.6} />
         </RoundButton>
         <div className="ml-auto flex gap-2">

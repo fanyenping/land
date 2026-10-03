@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { createBrowserRouter, Outlet, RouterProvider } from "react-router";
+import { createBrowserRouter, createMemoryRouter, Outlet, RouterProvider, type RouteObject } from "react-router";
 import { registerSW } from "virtual:pwa-register";
 import "@fontsource-variable/noto-sans-tc";
 import "@fontsource-variable/chiron-goround-tc";
@@ -19,6 +19,8 @@ import { NotFound } from "./screens/NotFound";
 import { boot } from "./app/boot";
 import { ToastProvider } from "./components/Toast";
 import { FlowsProvider } from "./app/Flows";
+import { db } from "./lib/db";
+import { TRIAL } from "./lib/env";
 
 /** 全站共用的提示與流程（跨頁面時「復原」提示不會消失）。 */
 function Root() {
@@ -31,7 +33,7 @@ function Root() {
   );
 }
 
-const router = createBrowserRouter([
+const routes: RouteObject[] = [
   {
     element: <Root />,
     children: [
@@ -52,13 +54,34 @@ const router = createBrowserRouter([
       },
     ],
   },
-]);
+];
 
-void boot();
-registerSW({ immediate: true });
+// 試用版放在分享網頁的框架裡，網址列不屬於 App：改用記憶體路由。
+const router = TRIAL ? createMemoryRouter(routes) : createBrowserRouter(routes);
+const root = createRoot(document.getElementById("root")!);
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <RouterProvider router={router} />
-  </StrictMode>,
-);
+db.open()
+  .then(() => {
+    void boot();
+    registerSW({ immediate: true });
+    root.render(
+      <StrictMode>
+        <RouterProvider router={router} />
+      </StrictMode>,
+    );
+  })
+  .catch(() => root.render(<StorageBlocked />));
+
+/** 無痕視窗或封鎖網站資料時，IndexedDB 打不開：說明原因，而不是一片空白。 */
+function StorageBlocked() {
+  return (
+    <div style={{ minHeight: "100dvh", display: "grid", placeItems: "center", padding: "24px 16px", textAlign: "center" }}>
+      <div style={{ maxWidth: 420, display: "flex", flexDirection: "column", gap: 12 }}>
+        <p className="font-round" style={{ fontSize: "1.6rem", fontWeight: 800 }}>
+          TaiOne care 無法在這個視窗儲存資料
+        </p>
+        <p style={{ fontWeight: 700, lineHeight: 1.7 }}>紀錄只存在這台裝置。請改用一般（非無痕）視窗開啟，或在瀏覽器設定允許這個網站儲存資料。</p>
+      </div>
+    </div>
+  );
+}

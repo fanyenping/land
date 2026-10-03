@@ -4,6 +4,7 @@ import { Critter } from "../components/Critter";
 import { useToast } from "../components/Toast";
 import { Segmented } from "../components/ui";
 import { removeDocument } from "../lib/actions";
+import { TRIAL } from "../lib/env";
 import { canPlaySource, playAt } from "../lib/audio";
 import { getBlob } from "../lib/db";
 import { bytes, duration } from "../lib/format";
@@ -124,7 +125,7 @@ function DocRow({ doc, onRemove }: { doc: VisitDocument; onRemove?: () => void }
         <span className="block truncate font-bold">{doc.name}</span>
         <span className="num block text-[0.88rem] text-ink-soft">{bytes(doc.size)}</span>
       </span>
-      {url && (
+      {url && !TRIAL && (
         <a href={url} target="_blank" rel="noreferrer" className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full px-3 font-bold outline-ink">
           <ExternalLink size={16} />
           開啟

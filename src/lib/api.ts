@@ -11,6 +11,7 @@ import type {
   TranslateRequest,
   TranslateResponse,
 } from "../../shared/types";
+import { TRIAL } from "./env";
 
 export class PipelineError extends Error {
   constructor(
@@ -50,6 +51,13 @@ export function probeEngine(force = false): Promise<Engine> {
   if (engine && !force && !stale) return Promise.resolve(engine);
   if (probing && !force) return probing;
   probing = (async () => {
+    if (TRIAL) {
+      engine = { kind: "local", reason: "試用版・使用內建示範內容" };
+      probedAt = Date.now();
+      listeners.forEach((l) => l(engine!));
+      probing = null;
+      return engine;
+    }
     try {
       const res = await fetch("/api/health", { signal: AbortSignal.timeout(4000) });
       const ct = res.headers.get("content-type") ?? "";
@@ -77,6 +85,7 @@ export function onEngine(fn: (e: Engine) => void) {
 
 /** 側欄與首頁顯示的 AI 狀態。 */
 export function engineLabel(e: Engine | null, demoMode: boolean): { text: string; tone: "ok" | "demo" | "off" | "checking" } {
+  if (TRIAL) return { text: "試用版", tone: "demo" };
   if (demoMode) return { text: "示範模式", tone: "demo" };
   if (!e) return { text: "連線檢查中", tone: "checking" };
   if (e.kind === "local") return { text: "AI 未連線", tone: "off" };

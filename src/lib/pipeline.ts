@@ -2,6 +2,7 @@ import type { AnalyzeRequest, DocKind, GenerateRequest, PatientContext, Translat
 import { PipelineError, analyze, currentEngine, generate, probeEngine, transcribe, translate } from "./api";
 import { db, getBlob, getSettings, updateVisit } from "./db";
 import { ageOf } from "./format";
+import { TRIAL } from "./env";
 import { emptyOutput, newId, type AppError, type OutputState, type Patient, type Stage, type Visit } from "./model";
 import { confirmedVitalList, initialVitals } from "./vitals";
 
@@ -86,6 +87,7 @@ export function isRunning(visitId: string) {
  * 真實個案在連不到伺服器時一律等網路，絕不換成示範內容。
  */
 async function engineFor(patient: Patient): Promise<"local" | "server" | "wait"> {
+  if (TRIAL) return "local";
   const settings = await getSettings();
   if (settings.demoMode) return "local";
   const engine = await probeEngine(currentEngine()?.kind === "local");

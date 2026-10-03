@@ -1,4 +1,5 @@
 import { DOC_LABEL, type DocKind, type DocSection, type TranslateLang } from "../../shared/types";
+import { TRIAL } from "./env";
 import { fullDate } from "./format";
 import type { OutputState, Patient, Settings, Visit } from "./model";
 import { VITAL_ORDER, vitalsLine } from "./vitals";
@@ -111,8 +112,9 @@ export function eduShareText(visit: Visit, patient: Patient | undefined, setting
   return `${docHeader("edu", visit, patient, settings)}\n${docBody("edu", visit, settings)}`;
 }
 
-/** 開啟 LINE 分享；支援系統分享面板時優先使用。 */
-export async function shareToLine(text: string): Promise<"shared" | "line" | "cancelled"> {
+/** 開啟 LINE 分享；支援系統分享面板時優先使用。試用版的框架不允許分享與開新視窗：只複製。 */
+export async function shareToLine(text: string): Promise<"shared" | "line" | "cancelled" | "copied"> {
+  if (TRIAL) return "copied";
   if (navigator.share) {
     try {
       await navigator.share({ text });

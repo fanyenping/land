@@ -88,7 +88,8 @@ export function Recording() {
 
   const back = () => {
     if (rec.state === "recording") recorder.pause();
-    navigate(-1);
+    if (location.key !== "default") navigate(-1);
+    else navigate(`/v/${visit.id}`, { replace: true });
   };
 
   const ended = visit.status === "interrupted";

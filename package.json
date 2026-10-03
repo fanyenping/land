@@ -13,7 +13,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "lint": "tsc -b --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:trial": "vite build --mode trial && node scripts/build-trial.mjs"
   },
   "engines": {
     "node": ">=20"

@@ -2,7 +2,7 @@ import { DOC_LABEL, VITAL_LABEL, type DocKind, type DocSection, type VitalKey } 
 import { allDocsText, docBody, docCopyText, docHeader, writeClipboard } from "./compose";
 import { db, deleteVisitDeep, getSettings, putBlob, updatePatient, updateVisit, type StoredBlob } from "./db";
 import { addDays, todayStr } from "./format";
-import { CONSENT_VERSION, newId, type AudioPart, type OutputState, type Patient, type Visit, type VisitDocument } from "./model";
+import { CONSENT_VERSION, newId, type AudioPart, type OutputState, type Patient, type Settings, type Visit, type VisitDocument } from "./model";
 import { isRunning, newVisit, processVisit, regenerate, reprocessWithNewMaterial, scheduleVitalsRefresh } from "./pipeline";
 import { audioDuration, recorder } from "./recorder";
 import { confirmedVitalList, pendingVitals } from "./vitals";
@@ -548,11 +548,13 @@ async function markConfirmed(visitId: string, kind: DocKind, extra: { copied?: b
   }
 }
 
-/** 確認並複製：同一次點擊內寫入剪貼簿。 */
-export async function confirmAndCopy(visit: Visit, kind: DocKind, patient?: Patient): Promise<{ ok: boolean; chars: number; blockers: Blocker[] }> {
+/**
+ * 確認並複製。剪貼簿寫入必須是點擊後的第一個非同步動作（iPhone Safari 與分享網頁的框架
+ * 在等過資料庫之後就不再允許寫入），所以設定由畫面傳入，確認紀錄在複製之後才寫。
+ */
+export async function confirmAndCopy(visit: Visit, kind: DocKind, patient: Patient | undefined, settings: Settings): Promise<{ ok: boolean; chars: number; blockers: Blocker[] }> {
   const blockers = blockersFor(visit, kind);
   if (blockers.length) return { ok: false, chars: 0, blockers };
-  const settings = await getSettings();
   const text = docCopyText(kind, visit, patient, settings);
   const ok = await writeClipboard(text);
   if (ok) await markConfirmed(visit.id, kind, { copied: true });
@@ -566,11 +568,10 @@ export async function confirmOnly(visit: Visit, kind: DocKind) {
   return [];
 }
 
-export async function confirmAll(visit: Visit, patient: Patient | undefined): Promise<{ ok: boolean; blockers: Blocker[]; kinds: DocKind[] }> {
+export async function confirmAll(visit: Visit, patient: Patient | undefined, settings: Settings): Promise<{ ok: boolean; blockers: Blocker[]; kinds: DocKind[] }> {
   const kinds = (["record", "plan", "edu"] as DocKind[]).filter((k) => visit.outputs[k].versions.length > 0);
   const blockers = blockersFor(visit, "all");
   if (blockers.length) return { ok: false, blockers, kinds };
-  const settings = await getSettings();
   const ok = await writeClipboard(allDocsText(visit, patient, settings, kinds));
   if (ok) for (const k of kinds) await markConfirmed(visit.id, k, { copied: true });
   return { ok, blockers: [], kinds };
