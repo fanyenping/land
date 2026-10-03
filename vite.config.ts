@@ -40,7 +40,7 @@ export default defineConfig(({ mode }) => ({
       registerType: "autoUpdate",
       includeAssets: ["icon.svg", "favicon.svg", "icon-maskable.svg"],
       manifest: {
-        name: "TaiOne care · We care",
+        name: "TaiOne care · We care you",
         short_name: "TaiOne care",
         description: "PDF 或錄音一鍵產出護理計畫、護理紀錄與家屬衛教",
         lang: "zh-Hant-TW",

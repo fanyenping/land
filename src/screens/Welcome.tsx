@@ -56,7 +56,7 @@ export function Welcome() {
               <p className="font-round text-[2rem] font-extrabold leading-none">
                 TaiOne <span className="text-coral">care</span>
               </p>
-              <p className="mt-1 text-[1.1rem] font-bold opacity-80">We care</p>
+              <p className="mt-1 text-[1.1rem] font-bold opacity-80">We care you</p>
             </div>
           </div>
           <div className="mt-6 flex gap-2">

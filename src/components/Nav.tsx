@@ -94,7 +94,7 @@ export function SideNav({ onPlus }: { onPlus: () => void }) {
             <div className="font-round text-[1.2rem] font-extrabold">
               TaiOne <span className="text-coral">care</span>
             </div>
-            <div className="text-[0.8rem] font-bold text-ink-soft">We care</div>
+            <div className="text-[0.8rem] font-bold text-ink-soft">We care you</div>
           </div>
         </div>
         <button

@@ -221,7 +221,7 @@ export function SettingsScreen() {
       </Group>
 
       <p className="mb-6 mt-2 text-center text-[0.85rem] font-bold text-ink-faint">
-        TaiOne care · We care　App 1.0.0　同意書 {CONSENT_VERSION}
+        TaiOne care · We care you　App 1.0.0　同意書 {CONSENT_VERSION}
       </p>
 
       <Sheet

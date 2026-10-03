@@ -307,8 +307,8 @@ export function careRecordDocDefinition(raw: CareRecordData): Record<string, unk
     info: {
       title: data.patientName ? `${data.title}－${data.patientName}` : data.title,
       author: data.clinicName,
-      creator: "TaiOne care · We care",
-      producer: "TaiOne care · We care",
+      creator: "TaiOne care · We care you",
+      producer: "TaiOne care · We care you",
     },
     defaultStyle: { font: "Serif", fontSize: FONT_SIZE, lineHeight: 1 },
     header: (): Content | null =>

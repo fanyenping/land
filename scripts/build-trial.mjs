@@ -25,7 +25,7 @@ const js = readFileSync(join(DIR, jsPath), "utf8")
 const css = readFileSync(join(DIR, cssPath), "utf8").replace(/<\/style/gi, "<\\/style");
 if (/url\((?!["']?data:)/.test(css)) throw new Error("CSS 還有外部 url()，分享網頁會擋下");
 
-const page = `<title>TaiOne care · We care</title>
+const page = `<title>TaiOne care · We care you</title>
 <meta name="description" content="居護師 AI 記錄助理試用版：PDF 或錄音一鍵產出護理紀錄、護理計畫與家屬衛教。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
