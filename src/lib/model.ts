@@ -18,6 +18,22 @@ export interface Tube {
   intervalDays: number | null;
 }
 
+/** 非計畫性住院或急診（照護紀錄導出的兩個區塊），記在個案上，導出時取訪視日前 30 天內的。 */
+export interface CareEvent {
+  id: string;
+  kind: "admission" | "er";
+  /** YYYY-MM-DD */
+  date: string;
+  shift: "白班" | "小夜" | "大夜" | null;
+  reason: string;
+}
+
+export const SHIFT_RANGE: Record<NonNullable<CareEvent["shift"]>, string> = {
+  白班: "08：00～16：00",
+  小夜: "16：00～24：00",
+  大夜: "00：00～08：00",
+};
+
 export interface RecordingConsent {
   by: "個案本人" | "家屬";
   at: string;
@@ -42,6 +58,17 @@ export interface Patient {
   isTemporary: boolean;
   createdAt: string;
   updatedAt: string;
+  /* 照護紀錄導出用的個案資料（舊資料可能沒有）。 */
+  /** 收案日期 YYYY-MM-DD。 */
+  intakeDate?: string | null;
+  /** 居住所：在宅(居家)、住宿式機構… */
+  residence?: string | null;
+  /** 居住區域：縣市＋行政區。 */
+  area?: string | null;
+  /** 使用資源：健保第一類…、長照、自費… */
+  resource?: string | null;
+  heightCm?: string | null;
+  events?: CareEvent[];
 }
 
 export type VisitStatus =
@@ -166,6 +193,15 @@ export interface Visit {
   recordingEndedAt: string | null;
   /** 處理中又補了資料：這輪結束後重新整理。 */
   reprocessQueued?: { audio: boolean } | null;
+  /* 照護紀錄導出用的訪視資料（舊資料可能沒有）。 */
+  /** 紀錄來源：家訪、電訪… */
+  source?: string;
+  /** 服務項目（沒設定時依個案管路推算）。 */
+  serviceItems?: string[];
+  /** 身體測量：體重、臂中圍、小腿圍（身高在個案上）。字串保留護理師輸入的寫法。 */
+  body?: { weightKg?: string; macCm?: string; calfCm?: string };
+  /** 導出紀錄（誰、何時產生 PDF）。 */
+  exports?: { at: string; by: string }[];
   /**
    * 第一次整理時拿來比較的「上次訪視」快照。這筆完成後個案的「上次」會換成它自己，
    * 之後重新產生仍要跟真正的上次比，不能跟自己比。

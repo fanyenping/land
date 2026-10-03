@@ -61,6 +61,12 @@ export default defineConfig(({ mode }) => ({
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
+            // 照護紀錄 PDF 用的明體（約 3 MB）：第一次導出時才下載，之後離線也能產生 PDF。
+            urlPattern: ({ url }) => url.pathname.startsWith("/fonts/"),
+            handler: "CacheFirst",
+            options: { cacheName: "pdf-fonts", expiration: { maxEntries: 8, maxAgeSeconds: 60 * 60 * 24 * 365 } },
+          },
+          {
             urlPattern: ({ request }) => request.destination === "font",
             handler: "CacheFirst",
             options: { cacheName: "fonts", expiration: { maxEntries: 600, maxAgeSeconds: 60 * 60 * 24 * 365 } },

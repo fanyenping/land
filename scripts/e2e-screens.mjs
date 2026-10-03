@@ -1,7 +1,8 @@
 // 端對端走一遍主要流程並截圖（手機與電腦）。
 // 用法：先 `npm run dev`，再 `node scripts/e2e-screens.mjs [輸出資料夾]`
 import { chromium } from "playwright";
-import { mkdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, readFileSync } from "node:fs";
 
 const BASE = process.env.BASE_URL ?? "http://localhost:5173";
 const OUT = process.argv[2] ?? "screenshots";
@@ -174,6 +175,35 @@ async function deep() {
   await page.getByRole("button", { name: /翻成印尼文/ }).click();
   await page.getByText("Bahasa Indonesia").first().waitFor({ timeout: 30_000 });
   await shot("05-translate");
+
+  // 照護紀錄導出：補欄位 → 產生 PDF → 下載並檢查內容
+  await page.getByRole("button", { name: "照護紀錄導出（PDF）" }).click();
+  const dlg = page.getByRole("dialog");
+  await dlg.getByText("這份 PDF 會包含").waitFor();
+  await dlg.getByLabel("身高 cm").fill("155");
+  await dlg.getByLabel("身高 cm").press("Tab");
+  await dlg.getByLabel("體重 kg").fill("52.3");
+  await dlg.getByLabel("體重 kg").press("Tab");
+  await dlg.getByRole("button", { name: "在宅(居家)" }).click();
+  await dlg.getByRole("radio", { name: "急診" }).click();
+  await dlg.getByLabel("發生原因").fill("跌倒送急診，X 光未見骨折後返家。");
+  await dlg.getByRole("button", { name: "加入", exact: true }).click();
+  await dlg.getByText("跌倒送急診").waitFor();
+  await shot("05b-export-form");
+  await dlg.getByRole("button", { name: "確認並產生 PDF" }).click();
+  await dlg.getByText("PDF 已產生").waitFor({ timeout: 60_000 });
+  await shot("05c-export-ready");
+  const [dl] = await Promise.all([page.waitForEvent("download"), dlg.getByRole("button", { name: "下載 PDF" }).click()]);
+  const pdfPath = `${OUT}/deep-care-record.pdf`;
+  await dl.saveAs(pdfPath);
+  const bytes = readFileSync(pdfPath);
+  if (bytes.subarray(0, 5).toString() !== "%PDF-") errors.push("[deep] export is not a PDF");
+  const text = execFileSync("pdftotext", ["-layout", pdfPath, "-"]).toString();
+  for (const want of ["照護紀錄", "周美玉", "生命徵象紀錄", "發生非計畫性住院", "個案近期使用急診", "跌倒送急診", "護理計畫", "家屬衛教", "52.3 kg", "匯出人員"]) {
+    if (!text.includes(want)) errors.push(`[deep] PDF missing: ${want}`);
+  }
+  console.log(`care record PDF: ${(bytes.length / 1024).toFixed(0)} KB, ${(text.match(/\f/g) ?? []).length} pages`);
+  await page.keyboard.press("Escape");
 
   // 設定：深色、大字
   await page.goto(`${BASE}/settings`);

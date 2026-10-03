@@ -56,6 +56,11 @@ export async function seedDemo(): Promise<boolean> {
     birthYear: new Date().getFullYear() - 84,
     familyCallsAs: "阿嬤",
     diagnoses: ["腦中風後遺症", "高血壓", "第二型糖尿病"],
+    intakeDate: addDays(today, -400),
+    heightCm: "152",
+    residence: "在宅(居家)",
+    area: "臺北市大安區",
+    resource: "健保第一類",
     tubes: [
       { id: newId(), name: "鼻胃管", changedAt: addDays(today, -30), intervalDays: 30 },
       { id: newId(), name: "導尿管", changedAt: addDays(today, -12), intervalDays: 30 },
@@ -79,6 +84,11 @@ export async function seedDemo(): Promise<boolean> {
     birthYear: new Date().getFullYear() - 78,
     familyCallsAs: "阿公",
     diagnoses: ["慢性阻塞性肺病", "攝護腺肥大"],
+    intakeDate: addDays(today, -210),
+    heightCm: "165",
+    residence: "在宅(居家)",
+    area: "新北市板橋區",
+    resource: "健保第六類",
     tubes: [{ id: newId(), name: "導尿管", changedAt: addDays(today, -25), intervalDays: 30 }],
     consent: { by: "個案本人", at: `${addDays(today, -40)}T09:00:00.000Z`, version: "2026.10", expiresAt: addDays(today, 140) },
     last: { date: addDays(today, -28), summary: "呼吸平順，導尿管通暢", vitals: [], findings: [] },
@@ -89,6 +99,15 @@ export async function seedDemo(): Promise<boolean> {
     birthYear: new Date().getFullYear() - 90,
     familyCallsAs: "阿祖",
     diagnoses: ["失智症", "骨質疏鬆"],
+    intakeDate: addDays(today, -95),
+    heightCm: "148",
+    residence: "在宅(居家)",
+    area: "臺北市文山區",
+    resource: "健保第六類",
+    events: [
+      { id: newId(), kind: "admission", date: addDays(today, -17), shift: "小夜", reason: "發燒急診，診斷吸入性肺炎收住院治療，5 天後出院。" },
+      { id: newId(), kind: "er", date: addDays(today, -17), shift: "小夜", reason: "發燒 38.6 度、痰多，家屬送急診。" },
+    ],
     tubes: [{ id: newId(), name: "鼻胃管", changedAt: addDays(today, -20), intervalDays: 30 }],
     consent: { by: "家屬", at: `${addDays(today, -60)}T10:00:00.000Z`, version: "2026.10", expiresAt: addDays(today, 120) },
     last: { date: addDays(today, -14), summary: "食慾差，體重下降 1 公斤", vitals: [], findings: [] },
@@ -132,6 +151,9 @@ export async function seedDemo(): Promise<boolean> {
   const vChang = newVisit(chang.id, today, "13:30");
   const vLee = newVisit(lee.id, today, "15:00");
 
+  vWang.body = { weightKg: "58.2", macCm: "24.5", calfCm: "30" };
+  vLin.body = { weightKg: "36.4", macCm: "20.5", calfCm: "27" };
+
   await finishDemoVisit(vWang, wang, "done");
   await finishDemoVisit(vLin, lin, "review");
 
@@ -166,6 +188,7 @@ async function finishDemoVisit(v: Visit, p: Patient, status: "done" | "review") 
   });
   v.analysis = analysis;
   v.analysisMeta = { mode: "demo", model: null, promptVersion: "demo" };
+  v.previous = p.last;
   v.vitals = initialVitals(analysis, {}, {});
   if (status === "done") {
     for (const r of analysis.vitals) {

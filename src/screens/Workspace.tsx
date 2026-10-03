@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
-import { ChevronLeft, Copy, FileUp, Info, Mic, MoreHorizontal, Pencil, Shuffle, Trash2 } from "lucide-react";
+import { ChevronLeft, Copy, FileText, FileUp, Info, Mic, MoreHorizontal, Pencil, Shuffle, Trash2 } from "lucide-react";
 import { VITAL_LABEL, type DocKind, type VitalKey } from "../../shared/types";
 import { useFlows } from "../app/Flows";
 import { ActionSheet } from "../components/ActionSheet";
@@ -18,6 +18,7 @@ import { useEngine, useMedia, usePatient, useSettings, useVisit } from "../lib/h
 import type { Patient, Visit } from "../lib/model";
 import { nextDue } from "../lib/pipeline";
 import { visitStatus } from "../lib/status";
+import { ExportSheet } from "../workspace/ExportSheet";
 import { OutputCard } from "../workspace/OutputCard";
 import { Progress } from "../workspace/Progress";
 import { ReviewBlock } from "../workspace/ReviewBlock";
@@ -70,6 +71,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
   const [vitalsOpen, setVitalsOpen] = useState<{ focus: VitalKey | null } | null>(null);
   const [blocked, setBlocked] = useState<{ kind: DocKind | "all"; blockers: Blocker[] } | null>(null);
   const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const st = visitStatus(visit);
@@ -181,13 +183,25 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
         desktop ? "sticky bottom-4 mt-4" : embedded ? "sticky bottom-0 -mx-4 bg-paper/90 px-4 pb-3 pt-2 backdrop-blur-md md:-mx-6 md:px-6" : "safe-bottom fixed inset-x-0 bottom-0 bg-paper/90 px-4 pb-3 pt-2 backdrop-blur-md",
       )}
     >
-      <Button variant="primary" size="xl" block icon={<Copy size={22} />} onClick={copyAll}>
-        {allConfirmed
-          ? "已全部確認・再全部複製"
-          : available.length < 3
-            ? `全部確認並複製（${available.length} 份・${KINDS.filter((k) => !available.includes(k)).map((k) => docTitle(k, settings).slice(-2)).join("、")}未完成）`
-            : "全部確認並複製（3 份）"}
-      </Button>
+      <div className="flex items-stretch gap-2.5">
+        <Button variant="primary" size="xl" className="min-w-0 flex-1" icon={<Copy size={22} />} onClick={copyAll}>
+          {allConfirmed
+            ? "已全部確認・再全部複製"
+            : available.length < 3
+              ? `全部確認並複製（${available.length} 份・${KINDS.filter((k) => !available.includes(k)).map((k) => docTitle(k, settings).slice(-2)).join("、")}未完成）`
+              : "全部確認並複製（3 份）"}
+        </Button>
+        <button
+          type="button"
+          onClick={() => setExportOpen(true)}
+          aria-label="照護紀錄導出（PDF）"
+          title="照護紀錄導出（PDF）"
+          className="sticker flex min-h-[68px] shrink-0 flex-col items-center justify-center gap-0.5 rounded-[24px] bg-pdf px-3.5 text-[0.8rem] font-extrabold text-[#141414]"
+        >
+          <FileText size={22} strokeWidth={2.4} />
+          PDF
+        </button>
+      </div>
     </div>
   );
 
@@ -284,6 +298,17 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
 
       <VitalsSheet visit={visit} open={!!vitalsOpen} focus={vitalsOpen?.focus} onClose={() => setVitalsOpen(null)} />
 
+      <ExportSheet
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        visit={visit}
+        patient={patient}
+        onBlocked={(blockers) => {
+          setExportOpen(false);
+          onBlocked("all", blockers);
+        }}
+      />
+
       <Sheet open={sourcesOpen} onClose={() => setSourcesOpen(false)} title="來源" full>
         <Sources visit={visit} />
       </Sheet>
@@ -330,6 +355,9 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
         title={<Name name={patient.name} />}
         items={[
           { label: "補資料（PDF、照片、錄音檔）", icon: <FileUp size={21} />, onSelect: () => fileInput.current?.click() },
+          ...(reviewing && available.length > 0
+            ? [{ label: "照護紀錄導出（PDF）", icon: <FileText size={21} />, hint: "含護理紀錄、生命徵象、護理計畫、家屬衛教，可分享到 LINE", onSelect: () => setExportOpen(true) }]
+            : []),
           ...(visit.status !== "scheduled" ? [{ label: "數值速記", icon: <Pencil size={21} />, onSelect: () => setVitalsOpen({ focus: null }) }] : []),
           {
             label: "改到其他個案",

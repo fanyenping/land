@@ -3,9 +3,10 @@ import { Search, UserPlus } from "lucide-react";
 import { Critter } from "../components/Critter";
 import { Name } from "../components/Name";
 import { Sheet } from "../components/Sheet";
-import { Button, Field, Segmented, cx, inputClass } from "../components/ui";
+import { Button, Chip, Field, Segmented, cx, inputClass } from "../components/ui";
 import { createPatient, type PatientForm } from "../lib/actions";
-import { ageOf, maskName } from "../lib/format";
+import { RESIDENCE_OPTIONS, RESOURCE_OPTIONS } from "../export/careRecord";
+import { ageOf, maskName, todayStr } from "../lib/format";
 import { usePatients } from "../lib/hooks";
 import type { Patient } from "../lib/model";
 import { updatePatient } from "../lib/db";
@@ -114,6 +115,11 @@ function PatientFormBody({ initial, onSaved }: { initial: Patient | null; onSave
   const [age, setAge] = useState(initial?.birthYear ? String(thisYear - initial.birthYear) : "");
   const [calls, setCalls] = useState(initial?.familyCallsAs ?? "");
   const [dx, setDx] = useState(initial?.diagnoses.join("、") ?? "");
+  const [intake, setIntake] = useState(initial?.intakeDate ?? initial?.createdAt.slice(0, 10) ?? todayStr());
+  const [height, setHeight] = useState(initial?.heightCm ?? "");
+  const [residence, setResidence] = useState(initial?.residence ?? "");
+  const [area, setArea] = useState(initial?.area ?? "");
+  const [resource, setResource] = useState(initial?.resource ?? "");
   const [busy, setBusy] = useState(false);
 
   const submit = async (e: FormEvent) => {
@@ -129,6 +135,11 @@ function PatientFormBody({ initial, onSaved }: { initial: Patient | null; onSave
         .split(/[、,，;；\n]/)
         .map((s) => s.trim())
         .filter(Boolean),
+      intakeDate: intake || null,
+      heightCm: height || null,
+      residence: residence || null,
+      area: area.trim() || null,
+      resource: resource || null,
     };
     if (initial) {
       await updatePatient(initial.id, form);
@@ -168,6 +179,42 @@ function PatientFormBody({ initial, onSaved }: { initial: Patient | null; onSave
       <Field label="主要診斷" hint="用頓號分開，例如：腦中風後遺症、高血壓">
         <input value={dx} onChange={(e) => setDx(e.target.value)} className={inputClass} />
       </Field>
+      <details className="rounded-[22px] bg-card p-4 outline-ink" open={!!initial && !!(initial.residence || initial.area || initial.resource || initial.heightCm)}>
+        <summary className="cursor-pointer font-bold">照護紀錄資料（選填，導出 PDF 用）</summary>
+        <div className="mt-3 flex flex-col gap-3">
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="收案日期">
+              <input type="date" value={intake} onChange={(e) => setIntake(e.target.value)} className={inputClass} />
+            </Field>
+            <Field label="身高 cm">
+              <input inputMode="decimal" value={height} onChange={(e) => setHeight(e.target.value.replace(/[^\d.]/g, "").slice(0, 5))} className={inputClass} placeholder="例如 152" />
+            </Field>
+          </div>
+          <Field label="居住區域">
+            <input value={area} onChange={(e) => setArea(e.target.value)} className={inputClass} placeholder="例如 臺北市文山區" />
+          </Field>
+          <div>
+            <span className="mb-1.5 block text-[0.95rem] font-bold">居住所</span>
+            <div className="flex flex-wrap gap-2">
+              {RESIDENCE_OPTIONS.map((r) => (
+                <Chip key={r} active={residence === r} onClick={() => setResidence(residence === r ? "" : r)}>
+                  {r}
+                </Chip>
+              ))}
+            </div>
+          </div>
+          <div>
+            <span className="mb-1.5 block text-[0.95rem] font-bold">使用資源</span>
+            <div className="flex flex-wrap gap-2">
+              {RESOURCE_OPTIONS.map((r) => (
+                <Chip key={r} active={resource === r} onClick={() => setResource(resource === r ? "" : r)}>
+                  {r}
+                </Chip>
+              ))}
+            </div>
+          </div>
+        </div>
+      </details>
       <Button type="submit" variant="primary" size="lg" block disabled={!name.trim() || busy}>
         {initial ? "儲存" : "建立個案"}
       </Button>

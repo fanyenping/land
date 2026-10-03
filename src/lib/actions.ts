@@ -23,6 +23,12 @@ export interface PatientForm {
   birthYear: number | null;
   familyCallsAs: string | null;
   diagnoses: string[];
+  /* 照護紀錄導出用（選填）。 */
+  intakeDate?: string | null;
+  heightCm?: string | null;
+  residence?: string | null;
+  area?: string | null;
+  resource?: string | null;
 }
 
 export async function createPatient(form: PatientForm, opts: { temporary?: boolean } = {}): Promise<Patient> {
@@ -34,6 +40,11 @@ export async function createPatient(form: PatientForm, opts: { temporary?: boole
     birthYear: form.birthYear,
     familyCallsAs: form.familyCallsAs?.trim() || null,
     diagnoses: form.diagnoses,
+    intakeDate: form.intakeDate ?? t.slice(0, 10),
+    heightCm: form.heightCm ?? null,
+    residence: form.residence ?? null,
+    area: form.area ?? null,
+    resource: form.resource ?? null,
     tubes: [],
     consent: null,
     consentRefusedAt: null,
@@ -590,6 +601,25 @@ export async function confirmAll(visit: Visit, patient: Patient | undefined, set
   const ok = await writeClipboard(allDocsText(visit, patient, settings, kinds));
   if (ok) for (const k of kinds) await markConfirmed(visit.id, k, { copied: true });
   return { ok, blockers: [], kinds };
+}
+
+/**
+ * 照護紀錄導出前：與「全部確認並複製」同一道關卡，已有內容的幾份一起標成確認。
+ * 回傳擋下的項目（有就不導出）。
+ */
+export async function confirmForExport(visit: Visit): Promise<Blocker[]> {
+  const blockers = blockersFor(visit, "all");
+  if (blockers.length) return blockers;
+  for (const k of ["record", "plan", "edu"] as DocKind[]) {
+    if (visit.outputs[k].versions.length && visit.outputs[k].status !== "confirmed") await markConfirmed(visit.id, k, {});
+  }
+  return [];
+}
+
+/** 記下這次導出（誰、何時），顯示在工作台並留作稽核。 */
+export async function logExport(visitId: string) {
+  const by = await confirmer();
+  await updateVisit(visitId, (v) => ({ exports: [...(v.exports ?? []), { at: nowIso(), by }] }));
 }
 
 export async function markEduShared(visitId: string) {
