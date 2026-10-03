@@ -141,7 +141,7 @@ export function AssessmentHome() {
             <Link
               key={f.id}
               to={`/patients/${patient.id}/assessment/${f.id}`}
-              className={cx("flex min-h-[64px] items-center gap-3 rounded-[22px] px-4 py-3 outline-ink", rec ? "bg-card" : "bg-sunken")}
+              className={cx("flex min-h-[64px] min-w-0 items-center gap-3 rounded-[22px] px-4 py-3 outline-ink", rec ? "bg-card" : "bg-sunken")}
             >
               <span className={cx("num grid h-9 w-9 shrink-0 place-items-center rounded-full text-[0.9rem] font-extrabold", rec ? "bg-ink text-paper" : "bg-ink/10 text-ink-soft")}>
                 {rec ? <Check size={18} strokeWidth={3} /> : i}
