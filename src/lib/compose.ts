@@ -79,19 +79,22 @@ export async function writeClipboard(text: string): Promise<boolean> {
     await navigator.clipboard.writeText(value);
     return true;
   } catch {
+    // 備援：選取隱藏文字框再複製。iPhone 需要 setSelectionRange，字級 16px 以上才不會放大畫面。
     const ta = document.createElement("textarea");
     ta.value = value;
     ta.setAttribute("readonly", "");
-    ta.style.position = "fixed";
-    ta.style.opacity = "0";
+    Object.assign(ta.style, { position: "fixed", top: "0", left: "0", opacity: "0", fontSize: "16px", pointerEvents: "none" });
     document.body.appendChild(ta);
+    ta.focus({ preventScroll: true });
     ta.select();
+    ta.setSelectionRange(0, ta.value.length);
     let ok = false;
     try {
       ok = document.execCommand("copy");
     } catch {
       ok = false;
     }
+    ta.blur();
     ta.remove();
     return ok;
   }

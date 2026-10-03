@@ -222,6 +222,13 @@ export async function storeFiles(visitId: string, files: File[]): Promise<StoreR
   return { audio: parts.length, docs: documents.length, skipped };
 }
 
+/** 存檔失敗（多半是裝置空間不足）時給護理師看的說明。 */
+export function storageErrorMessage(err: unknown): string {
+  const name = (err as { name?: string } | null)?.name ?? "";
+  const inner = (err as { inner?: { name?: string } } | null)?.inner?.name ?? "";
+  return name === "QuotaExceededError" || inner === "QuotaExceededError" ? "這台裝置的儲存空間不足，檔案沒有加入。請刪除舊紀錄或清出空間後再試。" : "檔案沒有加入，請再試一次。";
+}
+
 /** 檔案加入結果的提示文字。 */
 export function storeSummary(res: StoreResult, tail = "") {
   const added = res.audio + res.docs;
@@ -579,6 +586,11 @@ export async function confirmAll(visit: Visit, patient: Patient | undefined, set
 
 export async function markEduShared(visitId: string) {
   await markConfirmed(visitId, "edu", { shared: true });
+}
+
+/** 試用版的衛教只複製（沒有真的分享），記成「已複製」。 */
+export async function markEduCopied(visitId: string) {
+  await markConfirmed(visitId, "edu", { copied: true });
 }
 
 /* ----------------------------- 版本 ----------------------------- */

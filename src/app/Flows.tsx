@@ -15,8 +15,10 @@ import {
   recordConsent,
   refuseConsent,
   startRecording,
+  storageErrorMessage,
   storeSummary,
 } from "../lib/actions";
+import { TRIAL } from "../lib/env";
 import { bytes } from "../lib/format";
 import type { Patient } from "../lib/model";
 import { FindPatientSheet, PatientFormSheet, PatientRow } from "./PatientSheets";
@@ -71,7 +73,8 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
   const go = useCallback(
     async (patient: Patient, mode: "visit" | "dictate") => {
       const v = await ensureTodayVisit(patient.id);
-      const started = await startRecording(v.id);
+      // 試用版沒有麥克風：直接到錄音畫面，改用「選錄音檔」。
+      const started = TRIAL ? true : await startRecording(v.id);
       navigate(`/v/${v.id}/rec${mode === "dictate" ? "?mode=dictate" : ""}`, { state: { startFailed: !started } });
     },
     [navigate],
@@ -79,7 +82,8 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
 
   const record = useCallback(
     (patient: Patient, mode: "visit" | "dictate" = "visit") => {
-      if (mode === "dictate" || consentValid(patient)) void go(patient, mode);
+      // 試用版不會真的錄音，不必（也不該記下）錄音同意。
+      if (TRIAL || mode === "dictate" || consentValid(patient)) void go(patient, mode);
       else setConsent({ patient, mode });
     },
     [go],
@@ -103,9 +107,13 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
         toast("沒有可用的檔案（支援 PDF、照片、錄音檔）");
         return;
       }
-      const { visitId, result } = await importToPatient(patient.id, files);
-      toast(storeSummary(result, "，開始整理"), { ms: result.skipped.length ? 5000 : undefined });
-      if (visitId) navigate(`/v/${visitId}`);
+      try {
+        const { visitId, result } = await importToPatient(patient.id, files);
+        toast(storeSummary(result, "，開始整理"), { ms: result.skipped.length ? 5000 : undefined, error: !visitId });
+        if (visitId) navigate(`/v/${visitId}`);
+      } catch (err) {
+        toast(storageErrorMessage(err), { error: true });
+      }
     },
     [navigate, toast],
   );

@@ -39,13 +39,18 @@ export async function boot() {
   });
 }
 
+/** 試用版放在分享網頁裡，檢視器可能已在根元素設好 data-theme：記下來，「跟系統」時還原。 */
+const viewerTheme = typeof document !== "undefined" ? document.documentElement.getAttribute("data-theme") : null;
 let themeSetByApp = false;
 
 export function applyAppearance(theme: "system" | "light" | "dark", size: "standard" | "large") {
   const root = document.documentElement;
   if (theme === "system") {
-    // 試用版放在分享網頁裡：「跟系統」時保留檢視器自己設定的 data-theme，只移除 App 設過的。
-    if (!TRIAL || themeSetByApp) root.removeAttribute("data-theme");
+    if (!TRIAL) root.removeAttribute("data-theme");
+    else if (themeSetByApp) {
+      if (viewerTheme) root.setAttribute("data-theme", viewerTheme);
+      else root.removeAttribute("data-theme");
+    }
     themeSetByApp = false;
   } else {
     root.setAttribute("data-theme", theme);

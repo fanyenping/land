@@ -36,8 +36,8 @@ function EditBody({ visit, kind, onDone }: { visit: Visit; kind: DocKind; onDone
             <button
               type="button"
               onClick={async () => {
-                await writeClipboard(s.body);
-                toast("已複製此段");
+                if (await writeClipboard(s.body)) toast("已複製此段");
+                else toast("無法寫入剪貼簿，請長按文字自行複製", { error: true });
               }}
               className="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-full px-3 text-[0.92rem] font-bold hover:bg-ink/5"
             >

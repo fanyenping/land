@@ -209,8 +209,7 @@ export function SettingsScreen() {
           <Button
             size="lg"
             onClick={async () => {
-              await seedDemo();
-              toast("已載入示範個案");
+              toast((await seedDemo()) ? "已載入示範個案" : "示範個案已經在個案清單裡了");
               navigate("/");
             }}
           >

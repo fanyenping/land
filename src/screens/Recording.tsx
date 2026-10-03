@@ -8,10 +8,11 @@ import { useToast } from "../components/Toast";
 import { VitalsSheet } from "../components/VitalsSheet";
 import { Button, RoundButton, cx } from "../components/ui";
 import { useFlows } from "../app/Flows";
-import { consentValid, deleteVisit, finishVisit, startRecording, storeFiles, storeSummary } from "../lib/actions";
+import { consentValid, deleteVisit, finishVisit, startRecording, storageErrorMessage, storeFiles, storeSummary } from "../lib/actions";
 import { duration, shortDate } from "../lib/format";
 import { usePatient, useRecorder, useVisit } from "../lib/hooks";
-import { recorder } from "../lib/recorder";
+import { TRIAL } from "../lib/env";
+import { TRIAL_NO_MIC, recorder } from "../lib/recorder";
 
 export function Recording() {
   const { id } = useParams();
@@ -126,8 +127,13 @@ export function Recording() {
             錄音中斷了，前面 {duration(previousMs)} 已安全保存。可以繼續錄第 {visit.parts.length + 1} 段，或直接完成訪視。
           </div>
         )}
-        {!live && ((rec.state === "error" && mine) || startFailed) ? (
-          <div className="w-full rounded-[24px] bg-card p-4 font-bold outline-ink">
+        {TRIAL ? (
+          <div className="flex w-full items-center gap-3 rounded-[24px] bg-card p-4 font-bold text-ink outline-ink">
+            <Critter kind="pending" size={44} />
+            <span>{TRIAL_NO_MIC}</span>
+          </div>
+        ) : !live && ((rec.state === "error" && mine) || startFailed) ? (
+          <div className="w-full rounded-[24px] bg-card p-4 font-bold text-ink outline-ink">
             <div className="mb-3 flex items-center gap-3">
               <Critter kind="error" size={44} />
               <span>{rec.error ?? "麥克風無法啟動。"}</span>
@@ -154,7 +160,15 @@ export function Recording() {
           {duration(previousMs + (mine ? rec.elapsedMs : 0))}
         </div>
         <p className="text-[1.02rem] font-bold">
-          {live ? `第 ${segment} 段・即時存在這台裝置` : visit.parts.length ? `已錄 ${visit.parts.length} 段` : dictate ? "對著手機說今天的訪視重點" : "手機放在床邊就好，照護時不用碰"}
+          {live
+            ? `第 ${segment} 段・即時存在這台裝置`
+            : visit.parts.length
+              ? `已加入 ${visit.parts.length} 段錄音`
+              : TRIAL
+                ? "選一個錄音檔，或拍文件、記數值"
+                : dictate
+                  ? "對著手機說今天的訪視重點"
+                  : "手機放在床邊就好，照護時不用碰"}
         </p>
         {live && rec.state === "recording" && rec.elapsedMs > 3000 && rec.level < 0.04 && <p className="rounded-full bg-white/60 px-3 py-1 text-[0.92rem] font-bold">聲音偏小，手機放近一點</p>}
 
@@ -174,7 +188,18 @@ export function Recording() {
           </Button>
         </div>
 
-        {showStart ? (
+        {TRIAL ? (
+          <div className="flex w-full flex-col gap-3">
+            {(visit.parts.length > 0 || visit.documents.length > 0 || Object.keys(visit.typedVitals).length > 0) && (
+              <Button variant="primary" size="xl" block icon={<Check size={24} strokeWidth={3} />} onClick={done} disabled={busy}>
+                完成訪視
+              </Button>
+            )}
+            <Button variant={visit.parts.length ? "secondary" : "primary"} size={visit.parts.length ? "lg" : "xl"} block icon={<Upload size={22} />} onClick={() => audioPick.current?.click()}>
+              {visit.parts.length ? "再選一個錄音檔" : "選錄音檔"}
+            </Button>
+          </div>
+        ) : showStart ? (
           <div className="flex w-full flex-col gap-3">
             <Button variant="primary" size="xl" block onClick={begin} disabled={busy}>
               {visit.parts.length ? `繼續錄音（第 ${visit.parts.length + 1} 段）` : dictate ? "開始口述" : "開始錄音"}
@@ -214,8 +239,12 @@ export function Recording() {
           const files = Array.from(e.target.files ?? []);
           e.target.value = "";
           if (!files.length) return;
-          const res = await storeFiles(visit.id, files);
-          toast(res.skipped.length ? storeSummary(res) : `已加入 ${res.docs} 張文件照片`);
+          try {
+            const res = await storeFiles(visit.id, files);
+            toast(res.skipped.length ? storeSummary(res) : `已加入 ${res.docs} 張文件照片`, { error: res.docs === 0 });
+          } catch (err) {
+            toast(storageErrorMessage(err), { error: true });
+          }
         }}
       />
       <input
@@ -228,8 +257,12 @@ export function Recording() {
           const files = Array.from(e.target.files ?? []);
           e.target.value = "";
           if (!files.length) return;
-          const res = await storeFiles(visit.id, files);
-          toast(res.skipped.length ? storeSummary(res) : `已加入 ${res.audio} 個錄音檔`);
+          try {
+            const res = await storeFiles(visit.id, files);
+            toast(res.skipped.length ? storeSummary(res) : `已加入 ${res.audio} 個錄音檔`, { error: res.audio === 0 });
+          } catch (err) {
+            toast(storageErrorMessage(err), { error: true });
+          }
         }}
       />
 

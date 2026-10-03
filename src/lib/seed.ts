@@ -44,7 +44,9 @@ const PLAN_V3 = `護理問題 1：皮膚完整性受損（薦骨壓傷）
 2. 灌食時床頭抬高 30–45 度，灌後維持 30 分鐘
 評值：家屬可正確執行灌食`;
 
-export async function seedDemo() {
+export async function seedDemo(): Promise<boolean> {
+  // 已經有示範個案就不再加一份（避免重複的個案與訪視）。
+  if ((await db.patients.filter((p) => p.isDemo).count()) > 0) return false;
   const today = todayStr();
   const lastVisit = addDays(today, -14);
 
@@ -137,6 +139,7 @@ export async function seedDemo() {
     await db.patients.bulkPut(patients);
     await db.visits.bulkPut([vWang, vChen, vLin, vChang, vLee]);
   });
+  return true;
 }
 
 /** 用示範引擎直接產生一筆已處理的訪視（今日清單中的「已完成」「待確認」）。 */

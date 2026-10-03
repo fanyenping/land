@@ -149,8 +149,8 @@ export function PatientDetail() {
                   size="sm"
                   icon={<Copy size={16} />}
                   onClick={async () => {
-                    await writeClipboard(patient.plan!.text);
-                    toast("已複製現行計畫");
+                    if (await writeClipboard(patient.plan!.text)) toast("已複製現行計畫");
+                    else toast("無法寫入剪貼簿，請長按文字自行複製", { error: true });
                   }}
                 >
                   複製

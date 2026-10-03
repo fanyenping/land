@@ -14,6 +14,7 @@ import type { Patient, Visit } from "../lib/model";
 import { nextDue } from "../lib/pipeline";
 import { pendingCount, visitStatus } from "../lib/status";
 import { engineLabel } from "../lib/api";
+import { TRIAL } from "../lib/env";
 import { seedDemo } from "../lib/seed";
 
 export function Today() {
@@ -106,12 +107,16 @@ export function Today() {
           )}
         </p>
         <div className="mt-5 flex flex-wrap items-center gap-2 text-[0.92rem] font-bold">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5">
-            <span className={cx("h-2.5 w-2.5 rounded-full", online ? "bg-[#00b36b]" : "bg-[#8a8790]")} />
-            {online ? "已連線" : "離線中・錄音、查看、複製都照常"}
-          </span>
+          {!TRIAL && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5">
+              <span className={cx("h-2.5 w-2.5 rounded-full", online ? "bg-[#00b36b]" : "bg-[#8a8790]")} />
+              {online ? "已連線" : "離線中・錄音、查看、複製都照常"}
+            </span>
+          )}
           {(aiStatus.tone === "demo" || aiStatus.tone === "off") && (
-            <span className={cx("inline-flex items-center rounded-full px-3 py-1.5", aiStatus.tone === "demo" ? "bg-pending text-[#141414]" : "bg-white/10")}>{aiStatus.text}</span>
+            <span className={cx("inline-flex items-center rounded-full px-3 py-1.5", aiStatus.tone === "demo" ? "bg-pending text-[#141414]" : "bg-white/10")}>
+              {TRIAL ? "試用版・示範資料" : aiStatus.text}
+            </span>
           )}
         </div>
         <Critter kind="brand" size={120} className="pointer-events-none absolute -bottom-8 -right-6 opacity-90 md:-right-2" style={{ transform: "rotate(-12deg)" }} />
@@ -145,8 +150,7 @@ export function Today() {
                 size="lg"
                 block
                 onClick={async () => {
-                  await seedDemo();
-                  toast("已載入示範個案");
+                  toast((await seedDemo()) ? "已載入示範個案" : "示範個案已經在個案清單裡了");
                 }}
               >
                 載入示範個案

@@ -10,7 +10,7 @@ import { Sheet } from "../components/Sheet";
 import { useToast } from "../components/Toast";
 import { VitalsSheet } from "../components/VitalsSheet";
 import { Button, Pill, RoundButton, cx } from "../components/ui";
-import { ackWarnings, addMaterial, blockersFor, confirmAll, confirmAndCopy, deleteVisit, storeSummary, type Blocker } from "../lib/actions";
+import { ackWarnings, addMaterial, blockersFor, confirmAll, confirmAndCopy, deleteVisit, storageErrorMessage, storeSummary, type Blocker } from "../lib/actions";
 import { isDemoEngine } from "../lib/api";
 import { docTitle } from "../lib/compose";
 import { ageOf, clock, longDate, shortDate } from "../lib/format";
@@ -85,7 +85,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
   const copyAll = useCallback(async () => {
     const res = await confirmAll(visit, patient, settings);
     if (res.blockers.length) return onBlocked("all", res.blockers);
-    if (!res.ok) return toast("無法寫入剪貼簿");
+    if (!res.ok) return toast("無法寫入剪貼簿，請長按文字自行複製", { error: true });
     navigator.vibrate?.(40);
     toast(`已確認並複製 ${res.kinds.length} 份`, { big: true });
   }, [visit, patient, onBlocked, toast, settings]);
@@ -96,7 +96,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
     if (!next) return toast("這位三份都複製過了");
     const res = await confirmAndCopy(visit, next, patient, settings);
     if (res.blockers.length) return onBlocked(next, res.blockers);
-    if (!res.ok) return toast("無法寫入剪貼簿");
+    if (!res.ok) return toast("無法寫入剪貼簿，請長按文字自行複製", { error: true });
     const after = available.slice(available.indexOf(next) + 1).find((k) => !visit.outputs[k].copiedAt);
     toast(`已複製：${patient.familyCallsAs ?? ""}${docTitle(next, settings)}（${res.chars} 字）${after ? ` → 下一個：${docTitle(after, settings)}` : ""}`, { big: true, ms: 3200 });
   }, [available, visit, patient, onBlocked, toast, settings]);
@@ -273,8 +273,12 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
           const files = Array.from(e.target.files ?? []);
           e.target.value = "";
           if (!files.length) return;
-          const res = await addMaterial(visit.id, files);
-          if (res) toast(storeSummary(res, visit.status === "scheduled" ? "，開始整理" : "，重新整理中"), { ms: res.skipped.length ? 5000 : undefined });
+          try {
+            const res = await addMaterial(visit.id, files);
+            if (res) toast(storeSummary(res, visit.status === "scheduled" ? "，開始整理" : "，重新整理中"), { ms: res.skipped.length ? 5000 : undefined, error: res.audio + res.docs === 0 });
+          } catch (err) {
+            toast(storageErrorMessage(err), { error: true });
+          }
         }}
       />
 
@@ -302,7 +306,7 @@ function WorkspaceBody({ visit, patient, embedded }: { visit: Visit; patient: Pa
                 const res = await confirmAndCopy(visit, k, patient, settings);
                 if (res.blockers.length) onBlocked(k, res.blockers);
                 else if (res.ok) toast(`已確認並複製${docTitle(k, settings)}（${res.chars} 字）`);
-                else toast("無法寫入剪貼簿，請長按文字自行複製");
+                else toast("無法寫入剪貼簿，請長按文字自行複製", { error: true });
               }
             }}
           >

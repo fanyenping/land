@@ -26,7 +26,11 @@ const page = `<title>TaiOne care · We care</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="${fonts.replace(/&amp;/g, "&").replace(/&/g, "&amp;")}">
-<style>${css}</style>
+<style>
+/* App 的每個畫面自己處理瀏海與底部安全區（sticky 標題、固定底部導覽都加了 env()），
+   分享網頁外殼在 :root 加的安全區留白會重複，所以歸零。 */
+:root{padding-top:0!important;padding-bottom:0!important}
+${css}</style>
 <div id="root"></div>
 <script type="module">${js}</script>
 `;

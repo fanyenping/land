@@ -1,23 +1,27 @@
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
-import { Check } from "lucide-react";
+import { AlertTriangle, Check } from "lucide-react";
 
 interface ToastItem {
   id: number;
   text: string;
   action?: { label: string; run: () => void };
   big?: boolean;
+  /** 失敗提示：不用綠色勾勾，改用警示圖示。 */
+  error?: boolean;
 }
 
-const Ctx = createContext<(text: string, opts?: { action?: ToastItem["action"]; big?: boolean; ms?: number }) => void>(() => undefined);
+type ToastOptions = { action?: ToastItem["action"]; big?: boolean; ms?: number; error?: boolean };
+
+const Ctx = createContext<(text: string, opts?: ToastOptions) => void>(() => undefined);
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([]);
   const seq = useRef(0);
 
-  const show = useCallback((text: string, opts?: { action?: ToastItem["action"]; big?: boolean; ms?: number }) => {
+  const show = useCallback((text: string, opts?: ToastOptions) => {
     const id = ++seq.current;
-    setItems((list) => [...list.slice(-2), { id, text, action: opts?.action, big: opts?.big }]);
-    setTimeout(() => setItems((list) => list.filter((t) => t.id !== id)), opts?.ms ?? (opts?.action ? 5000 : 2600));
+    setItems((list) => [...list.slice(-2), { id, text, action: opts?.action, big: opts?.big, error: opts?.error }]);
+    setTimeout(() => setItems((list) => list.filter((t) => t.id !== id)), opts?.ms ?? (opts?.action || opts?.error ? 5000 : 2600));
   }, []);
 
   return (
@@ -32,8 +36,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               (t.big ? "text-[1.15rem]" : "text-[1rem]")
             }
           >
-            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-plan text-[#141414]">
-              <Check size={17} strokeWidth={3} />
+            <span className={"grid h-7 w-7 shrink-0 place-items-center rounded-full text-[#141414] " + (t.error ? "bg-pending" : "bg-plan")}>
+              {t.error ? <AlertTriangle size={16} strokeWidth={2.8} /> : <Check size={17} strokeWidth={3} />}
             </span>
             <span className="min-w-0 py-0.5 font-bold leading-snug">{t.text}</span>
             {t.action && (

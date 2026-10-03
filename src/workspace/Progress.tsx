@@ -4,11 +4,14 @@ import { Check, KeyRound, RefreshCw } from "lucide-react";
 import { Critter } from "../components/Critter";
 import { Button, Spinner, cx } from "../components/ui";
 import { probeEngine } from "../lib/api";
+import { TRIAL } from "../lib/env";
 import { useNow } from "../lib/hooks";
 import { STAGE_LABEL, type Stage, type Visit } from "../lib/model";
 import { processVisit } from "../lib/pipeline";
 
 const STAGES: Stage[] = ["upload", "transcribe", "analyze", "write"];
+// 試用版不上傳、也不真的轉文字。
+const LABEL: Record<Stage, string> = TRIAL ? { ...STAGE_LABEL, upload: "讀取檔案", transcribe: "示範逐字稿" } : STAGE_LABEL;
 
 /** 處理中：四步驟文字進度，永遠看得到在做什麼（不只轉圈圈）。 */
 export function Progress({ visit }: { visit: Visit }) {
@@ -31,7 +34,7 @@ export function Progress({ visit }: { visit: Visit }) {
         <div className="mb-3 flex items-center gap-3">
           <Critter kind="error" size={52} />
           <div>
-            <h2 className="font-round text-[1.3rem] font-extrabold">{visit.error?.stage && visit.error.stage in STAGE_LABEL ? `${STAGE_LABEL[visit.error.stage as Stage]}沒有成功` : "沒有完成"}</h2>
+            <h2 className="font-round text-[1.3rem] font-extrabold">{visit.error?.stage && visit.error.stage in LABEL ? `${LABEL[visit.error.stage as Stage]}沒有成功` : "沒有完成"}</h2>
             <p className="font-bold">{visit.error?.message ?? "請再試一次。"}</p>
           </div>
         </div>
@@ -80,7 +83,7 @@ export function Progress({ visit }: { visit: Visit }) {
               <span className={cx("grid h-7 w-7 shrink-0 place-items-center rounded-full", done ? "bg-[#141414] text-white" : "bg-black/15")}>
                 {done ? <Check size={16} strokeWidth={3} /> : <span className="num text-[0.85rem]">{i + 1}</span>}
               </span>
-              {STAGE_LABEL[s]}
+              {LABEL[s]}
             </li>
           );
         })}

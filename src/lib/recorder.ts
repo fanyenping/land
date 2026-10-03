@@ -2,7 +2,7 @@ import { db, putBlob, updateVisit } from "./db";
 import { TRIAL } from "./env";
 import { newId, type AudioPart } from "./model";
 
-const TRIAL_NO_MIC = "試用網址不能使用麥克風。請先用手機內建的錄音 App 錄好，再按「選錄音檔」匯入。";
+export const TRIAL_NO_MIC = "試用版不能用麥克風，也不會真的轉文字。選手機裡任何一個錄音檔就能體驗流程，三份內容會用示範逐字稿產生（標示示範資料）。";
 
 export type RecState = "idle" | "starting" | "recording" | "paused" | "error";
 
@@ -72,7 +72,8 @@ class Recorder {
       if (this.snap.visitId === visitId) return true;
       await this.stop();
     }
-    if (!this.supported) {
+    // 試用版的分享網頁不給麥克風：不要去要（瀏覽器會記錄權限錯誤），直接說明。
+    if (!this.supported || TRIAL) {
       this.set({ state: "error", error: TRIAL ? TRIAL_NO_MIC : "這個瀏覽器不支援錄音，請改用「選錄音檔」。", visitId });
       return false;
     }
