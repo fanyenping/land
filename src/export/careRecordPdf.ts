@@ -65,6 +65,27 @@ function show(value: string): string {
   return v ? v : EMPTY;
 }
 
+/**
+ * 字型只有 Big5 範圍（全在 BMP）：表情符號與擴充區罕用字改印「□」（否則印出空白、複製出亂碼），
+ * 並去掉零寬連接符、異體字選擇符與控制字元。
+ */
+function clean(text: string): string {
+  return text
+    .replace(/[\u{10000}-\u{10FFFF}]/gu, "□")
+    .replace(/[\u200B-\u200D\u2060\uFE00-\uFE0F]/g, "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
+}
+
+/** 所有資料字串先經 clean()。 */
+function cleanData<T>(value: T): T {
+  if (typeof value === "string") return clean(value) as T;
+  if (Array.isArray(value)) return value.map(cleanData) as T;
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, cleanData(v)])) as T;
+  }
+  return value;
+}
+
 /** 標籤格：淡紫底、置中；上下置中只用在不會被拆頁的列，或有「同頁守門」的長內容列（見 longRow）。 */
 function labelCell(text: string, id?: string): Node {
   return { text, id, fillColor: LAVENDER, alignment: "center", verticalAlignment: "middle" };
@@ -114,7 +135,12 @@ function longRow(key: string, widths: (number | string)[], label: string, text: 
     table: { widths, body: [[labelCell(label, `${key}:label`), longText(text, `${key}:first`)]] },
     layout: GRID,
   };
-  return [{ text: " ", id: `keep:${key}`, fontSize: 1, lineHeight: 0.01 }, ...lead, join ? joined(table) : table];
+  return [keepNode(key), ...lead, join ? joined(table) : table];
+}
+
+/** 守門節點：幾乎零高度、不可見（一個空白字元）。 */
+function keepNode(key: string): Node {
+  return { text: " ", id: `keep:${key}`, fontSize: 1, lineHeight: 0.01 };
 }
 
 /** 【區段標題】：固定字串，粗體。 */
@@ -182,19 +208,21 @@ function vitalsSection(data: CareRecordData): Node {
   return { stack: [sectionTitle("【生命徵象紀錄】"), table], unbreakable: true };
 }
 
-function eventSection(title: string, events: CareRecordRow[], range: string): Node {
+function eventSection(key: string, title: string, events: CareRecordRow[], range: string): Content[] {
   const body: Content[][] = [];
   if (events.length === 0) {
     body.push([labelCell("發生時間"), valueCell(range.trim() ? `無（${range.trim()}）` : "無")]);
     body.push([labelCell("發生原因"), valueCell("無")]);
   } else {
-    for (const e of events) {
-      body.push([labelCell("發生時間"), valueCell(e.when)]);
-      body.push([labelCell("發生原因"), longText(e.reason)]);
-    }
+    events.forEach((e, i) => {
+      body.push([labelCell("發生時間", i === 0 ? `${key}:label` : undefined), { ...valueCell(e.when), id: i === 0 ? `${key}:first` : undefined }]);
+      body.push([labelCell("發生原因"), valueCell(e.reason)]);
+    });
   }
-  // 事件少時整段不分頁；事件多時只保證每列不拆開。
-  return { stack: [sectionTitle(title), rowsTable(SIDE_WIDTHS, body)], unbreakable: events.length <= 3 };
+  const table = rowsTable(SIDE_WIDTHS, body);
+  // 事件少時整段不分頁；事件多時每列不拆開，並以守門節點讓標題與第一筆同頁。
+  if (events.length <= 3) return [{ stack: [sectionTitle(title), table], unbreakable: true }];
+  return [keepNode(key), sectionTitle(title), table];
 }
 
 function planSection(plan: NonNullable<CareRecordData["plan"]>): Content[] {
@@ -247,7 +275,8 @@ function keepTogether(content: Content[]) {
 }
 
 /** pdfmake 文件定義（純資料＋版面函式，不碰 DOM；伺服器端與瀏覽器都能用）。 */
-export function careRecordDocDefinition(data: CareRecordData): Record<string, unknown> {
+export function careRecordDocDefinition(raw: CareRecordData): Record<string, unknown> {
+  const data = cleanData(raw);
   const content: Content[] = [
     ...cover(data),
     // 第 2 頁起：抬頭只在第一頁內文出現，續頁直接接表格（同原文件）。
@@ -259,8 +288,8 @@ export function careRecordDocDefinition(data: CareRecordData): Record<string, un
     },
     ...mainTable(data),
     vitalsSection(data),
-    eventSection("【發生非計畫性住院】", data.admissions, data.eventRange),
-    eventSection("【個案近期使用急診】", data.erVisits, data.eventRange),
+    ...eventSection("admissions", "【發生非計畫性住院】", data.admissions, data.eventRange),
+    ...eventSection("er", "【個案近期使用急診】", data.erVisits, data.eventRange),
   ];
   if (data.plan) content.push(...planSection(data.plan));
   if (data.edu) content.push(...eduSection(data.edu));
