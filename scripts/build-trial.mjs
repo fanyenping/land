@@ -17,7 +17,11 @@ const cssPath = pick(/<link[^>]+rel="stylesheet"[^>]+href="\.?\/?(assets\/[^"]+\
 const fonts = pick(/<link[^>]+href="(https:\/\/fonts\.googleapis\.com\/[^"]+)"/, " Google Fonts");
 
 // 內嵌時不能讓字串裡的 </script 或 <!-- 提早結束 <script>。
-const js = readFileSync(join(DIR, jsPath), "utf8").replace(/<\/script/gi, "<\\/script").replace(/<!--/g, "<\\!--");
+// U+FFFD（取代字元）在函式庫的字串裡出現時改寫成跳脫序列，避免被當成編碼錯誤。
+const js = readFileSync(join(DIR, jsPath), "utf8")
+  .replace(/<\/script/gi, "<\\/script")
+  .replace(/<!--/g, "<\\!--")
+  .replace(/\uFFFD/g, "\\uFFFD");
 const css = readFileSync(join(DIR, cssPath), "utf8").replace(/<\/style/gi, "<\\/style");
 if (/url\((?!["']?data:)/.test(css)) throw new Error("CSS 還有外部 url()，分享網頁會擋下");
 
